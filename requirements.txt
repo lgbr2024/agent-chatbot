@@ -1,0 +1,7 @@
+
+numpy
+pandas
+streamlit
+pinecone-client
+python-dotenv
+scikit-learn
