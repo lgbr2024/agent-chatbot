@@ -154,16 +154,16 @@ def main():
     <format>
  
     Answer structure:
-    [Overall Conference] (about 35% of the total answer):
+    [Overall Conference]:
     - Explain the overall context of the conference related to the question
     - Introduce the main points or topics
     
-    [Contents] (about 40% of the total answer):
+    [Contents]:
     - Analyze the key content discussed at the conference and reference
     - Present relevant data or case studies
     - Show 2~3 data, file sources for each key contents
     
-    [Conclusion] (about 25% of the total answer):
+    [Conclusion]:
     - Summarize new trends based on the conference content
     - Present derived insights
     - Suggest future strategic directions
@@ -179,6 +179,8 @@ def main():
  	- Use the following retrieved context to answer the question. 
     	- If you don't know the answer, just say that you don't know. 
     	- Please answer in Korean and provide rich sentences to enhance the quality of the answer.
+        - report of about 4 A4 pages for each [question]
+        - [Overall Conference] (about 35% of the total answer) /  [Contents] (about 40% of the total answer) / [Conclusion] (about 25% of the total answer)
     </constraints>
     </task>
     <team>
