@@ -149,7 +149,7 @@ def main():
     </context>
     <task>
     <description>
-      Prepare a report of about 2 A4 pages for each [question], covering changes, issues, and response strategies
+      Prepare a report of about 4 A4 pages for each [question], covering changes, issues, and response strategies
     </description>
     <format>
  
@@ -161,6 +161,7 @@ def main():
     [Contents] (about 40% of the total answer):
     - Analyze the key content discussed at the conference and reference
     - Present relevant data or case studies
+    - Show 2~3 data, file sources for each key contents
     
     [Conclusion] (about 25% of the total answer):
     - Summarize new trends based on the conference content
