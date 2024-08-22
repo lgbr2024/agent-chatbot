@@ -12,8 +12,11 @@ from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnableP
 from langchain_pinecone import PineconeVectorStore
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
+import time
+
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
+
 class ModifiedPineconeVectorStore(PineconeVectorStore):
     def __init__(self, index, embedding, text_key: str = "text", namespace: str = ""):
         super().__init__(index, embedding, text_key, namespace)
@@ -21,8 +24,9 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
         self._embedding = embedding
         self._text_key = text_key
         self._namespace = namespace
+
     def similarity_search_with_score_by_vector(
-        self, embedding: List[float], k: int = 4, filter: Dict[str, Any] = None, namespace: str = None
+        self, embedding: List[float], k: int = 8, filter: Dict[str, Any] = None, namespace: str = None
     ) -> List[Tuple[Document, float]]:
         namespace = namespace or self._namespace
         results = self.index.query(
@@ -43,9 +47,10 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
             )
             for result in results["matches"]
         ]
+
     def max_marginal_relevance_search_by_vector(
-        self, embedding: List[float], k: int = 4, fetch_k: int = 20,
-        lambda_mult: float = 0.5, filter: Dict[str, Any] = None, namespace: str = None
+        self, embedding: List[float], k: int = 8, fetch_k: int = 30,
+        lambda_mult: float = 0.7, filter: Dict[str, Any] = None, namespace: str = None
     ) -> List[Document]:
         namespace = namespace or self._namespace
         results = self.index.query(
@@ -76,6 +81,7 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
             )
             for i in mmr_selected
         ]
+
 def maximal_marginal_relevance(
     query_embedding: np.ndarray,
     embedding_list: List[np.ndarray],
@@ -99,44 +105,51 @@ def maximal_marginal_relevance(
         selected_indices.append(max_index)
         candidate_indices.remove(max_index)
     return selected_indices
+
 def main():
     st.title("Robot Conference Q&A System")
+    
     # Initialize session state for chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    
     # Initialize Pinecone
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index_name = "conference"
     index = pc.Index(index_name)
+    
     # Select GPT model
     if "gpt_model" not in st.session_state:
         st.session_state.gpt_model = "gpt-4o"
     
     st.session_state.gpt_model = st.selectbox("Select GPT model:", ("gpt-4o", "gpt-4o-mini"), index=("gpt-4o", "gpt-4o-mini").index(st.session_state.gpt_model))
     llm = ChatOpenAI(model=st.session_state.gpt_model)
+    
     # Set up Pinecone vector store
     vectorstore = ModifiedPineconeVectorStore(
         index=index,
         embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
         text_key="source"
     )
+    
     # Set up retriever
     retriever = vectorstore.as_retriever(
         search_type='mmr',
-        search_kwargs={"k": 5, "fetch_k": 10, "lambda_mult": 0.75}
+        search_kwargs={"k": 10, "fetch_k": 20, "lambda_mult": 0.7}
     )
+    
     # Set up prompt template and chain
     template = """
- <prompt>
+    <prompt>
     Question: {question} 
     Context: {context} 
     Answer:
   
-  <context>
+    <context>
     <role>Strategic consultant for LG Group, tasked with uncovering new trends and insights based on various conference trends.</role>
     <audience>
-      <item>LG Group individual business executives</item>
-      <item>LG Group representative</item>
+      -LG Group individual business executives
+      -LG Group representative
     </audience>
     <knowledge_base>Conference file saved in vector database</knowledge_base>
     <goal>Find and provide organized content related to the conference that matches the questioner's inquiry, along with sources, to help derive project insights.</goal>
@@ -149,7 +162,7 @@ def main():
           <point>While individual pieces have meaning, they should be viewed from a more evolved perspective.</point>
         </points>
       </principle>
-  
+
       <principle>
         <name>Long-term Perspective and Proactive Response</name>
         <points>
@@ -157,7 +170,7 @@ def main():
           <point>Emphasize the importance of proactive preparation and readiness before problems arise.</point>
         </points>
       </principle>
-  
+
       <principle>
         <name>Sensitivity and Adaptability to Change</name>
         <points>
@@ -165,7 +178,7 @@ def main():
           <point>Encourage approaching issues with new perspectives, breaking away from existing preconceptions.</point>
         </points>
       </principle>
-  
+
       <principle>
         <name>Value Creation and Inducing Practical Change</name>
         <points>
@@ -173,7 +186,7 @@ def main():
           <point>Mention the importance of inducing real change in clients or organizations.</point>
         </points>
       </principle>
-  
+
       <principle>
         <name>Importance of Networking and Collaboration</name>
         <points>
@@ -181,7 +194,7 @@ def main():
           <point>Loose connections should always be within reach when needed.</point>
         </points>
       </principle>
-  
+
       <principle>
         <name>Proactive Researcher Role</name>
         <points>
@@ -189,7 +202,7 @@ def main():
           <point>Emphasize doing work that hasn't been assigned.</point>
         </points>
       </principle>
-  
+
       <principle>
         <name>Practical and Specific Approach</name>
         <points>
@@ -198,29 +211,31 @@ def main():
         </points>
       </principle>
     </research-principles>
-  </context>
+    </context>
   
-  <task>
+    <task>
     <description>
-      Describe about 12,000+ words for covering industrial changes, issues, and response strategies related to the conference. Reflects the [research principles]
-    </description>
+     Describe about 15,000+ words for covering industrial changes, issues, and response strategies related to the conference. Explicitly reflect and incorporate the [research principles] throughout your analysis and recommendations. 
+     </description>
     
     <format>
      [Conference Overview]
         - Explain the overall context of the conference related to the question
         - Introduce the main points or topics
-            
+                   
      [Contents]
-        - Analyze the key content discussed at the conference and reference.Describe 3~4 sentences for each key content.
-        - Present relevant data or case studies
-        - Show 2~3 data, file sources for each key content
-       
+        - Analyze the key content discussed at the conference and reference.
+        - For each key session or topic:
+          - Provide a detailed description of approximately 5 sentences.
+          - Include specific examples, data points, or case studies mentioned in the session.
+          - Show 2~3 data sources for each key content
+          
       [Conclusion]
         - Summarize new trends based on the conference content
-        - Present derived insights
-        - Suggest future strategic directions
+        - Present derived insights, emphasizing the 'Value Creation and Inducing Practical Change' principle
+        - Suggest future strategic directions, incorporating the 'Proactive Researcher Role' principle
         - Suggest 3 follow-up questions that the LG Group representative might ask, and provide brief answers to each (3~4 sentences)
- 
+
     </format>
     
     <style>Business writing with clear and concise sentences targeted at executives</style>
@@ -230,12 +245,12 @@ def main():
       <item>If you don't know the answer, admit it honestly</item>
       <item>Answer in Korean and provide rich sentences to enhance the quality of the answer</item>
       <item>Adhere to the length constraints for each section</item>
-      <item>Suggest appropriate data visualizations (e.g., charts, graphs) where relevant</item>
-      <item>[Conference Overview] (about 35% of the total answer) /  [Contents] (about 40% of the total answer) / [Conclusion] (about 25% of the total answer)
+      <item>[Conference Overview] about 4000 words /  [Contents] about 7000 wodrs / [Conclusion] about 4000 words</item>
+      <item>Explicitly mention and apply the research principles throughout the response</item>
     </constraints>
-  </task>
+    </task>
   
-  <team>
+ <team>
     <member>
       <name>John</name>
       <role>15-year consultant skilled in hypothesis-based thinking</role>
@@ -267,15 +282,17 @@ def main():
       <expertise>Overall leader overseeing the general quality of content</expertise>
     </member>
   </team>
- </prompt>
+    </prompt>
     """
     prompt = ChatPromptTemplate.from_template(template)
+
     def format_docs(docs: List[Document]) -> str:
         formatted = []
         for doc in docs:
             source = doc.metadata.get('source', 'Unknown source')
             formatted.append(f"Source: {source}")
         return "\n\n" + "\n\n".join(formatted)
+
     format = itemgetter("docs") | RunnableLambda(format_docs)
     answer = prompt | llm | StrOutputParser()
     chain = (
@@ -284,30 +301,61 @@ def main():
         .assign(answer=answer)
         .pick(["answer", "docs"])
     )
+
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
+    
     # User input
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
+        
         with st.chat_message("assistant"):
-            response = chain.invoke(question)
-            answer = response['answer']
-            source_documents = response['docs'][:5]  # Get up to 5 documents
+            # Create placeholders for status updates
+            status_placeholder = st.empty()
+            progress_bar = st.progress(0)
+            
+            try:
+                # Step 1: Query Processing
+                status_placeholder.text("Processing query...")
+                progress_bar.progress(25)
+                time.sleep(1)  # Simulate processing time
+                
+                # Step 2: Searching Database
+                status_placeholder.text("Searching database...")
+                progress_bar.progress(50)
+                response = chain.invoke(question)
+                time.sleep(1)  # Simulate search time
+                
+                # Step 3: Generating Answer
+                status_placeholder.text("Generating answer...")
+                progress_bar.progress(75)
+                answer = response['answer']
+                time.sleep(1)  # Simulate generation time
+                
+                # Step 4: Finalizing Response
+                status_placeholder.text("Finalizing response...")
+                progress_bar.progress(100)
+                time.sleep(0.5)  # Short pause to show completion
+                
+            finally:
+                # Clear status displays
+                status_placeholder.empty()
+                progress_bar.empty()
+            
+            # Display the answer
             st.markdown(answer)
             
-            with st.expander("Reference Documents"):
-                for i, doc in enumerate(source_documents, 1):
-                    st.write(f"{i}. Source: {doc.metadata.get('source', 'Unknown')}")
-    
-    # Add Plex.tv link
-            st.markdown("---")
-            st.markdown("[Watch related conference videos (Plex.tv)](https://app.plex.tv)")
-        
-        
-        st.session_state.messages.append({"role": "assistant", "content": answer})
+            # Display sources
+            with st.expander("Sources"):
+                for doc in response['docs']:
+                    st.write(f"- {doc.metadata['source']}")
+            
+            # Add assistant's response to chat history
+            st.session_state.messages.append({"role": "assistant", "content": answer})
+
 if __name__ == "__main__":
     main()
