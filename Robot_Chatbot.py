@@ -58,9 +58,13 @@ def perplexity_search(query: str) -> str:
     try:
         response = requests.post(url, json=payload, headers=headers)
         response.raise_for_status()
-        return response.json()['choices'][0]['message']['content']
+        data = response.json()
+        if 'choices' in data and len(data['choices']) > 0:
+            return data['choices'][0]['message']['content']
+        else:
+            return "Unexpected response format from API."
     except requests.RequestException as e:
-        st.error(f"Error in Perplexity search: {str(e)}")
+        print(f"Error in Perplexity search: {str(e)}")
         return "Error occurred during web search."
 
 def generate_response(question: str, pinecone_docs: List[Document], perplexity_result: str, llm: ChatOpenAI) -> str:
