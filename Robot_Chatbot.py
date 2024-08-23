@@ -69,21 +69,6 @@ def generate_response(question: str, pinecone_docs: List[Document], openai_resul
     response = prompt.format(pinecone_context=pinecone_context, openai_result=openai_result, question=question)
     return llm.predict(response)
 
-def animated_loading():
-    animation = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    messages = [
-        "Searching conference documents...",
-        "Performing web search...",
-        "Analyzing information...",
-        "Generating comprehensive response..."
-    ]
-    i = 0
-    while True:
-        for frame in animation:
-            yield f"{frame} {messages[i % len(messages)]}"
-            time.sleep(0.1)
-        i += 1
-
 def update_loading_animation(placeholder, progress_bar):
     loading_animation = animated_loading()
     progress = 0
@@ -94,6 +79,25 @@ def update_loading_animation(placeholder, progress_bar):
             progress = 0
         progress_bar.progress(int(progress))
         time.sleep(0.1)
+def animated_loading(placeholder, progress_bar):
+    animation = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    messages = [
+        "Searching conference documents...",
+        "Performing web search...",
+        "Analyzing information...",
+        "Generating comprehensive response..."
+    ]
+    i = 0
+    progress = 0
+    while True:
+        with placeholder.container():  # UI 업데이트를 메인 스레드에서 수행
+            placeholder.info(f"{animation[i % len(animation)]} {messages[i % len(messages)]}")
+        progress += 0.5
+        if progress > 100:
+            progress = 0
+        progress_bar.progress(int(progress))
+        time.sleep(0.1)
+        i += 1
 
 def main():
     st.title("Conference Q&A System with Web Search Integration")
@@ -101,29 +105,7 @@ def main():
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Initialize Pinecone
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    index = pc.Index("conference")
-
-    # Initialize OpenAI
-    llm = ChatOpenAI(model="gpt-4", temperature=0.7)
-    
-    # Set up Pinecone vector store
-    vectorstore = PineconeVectorStore(
-        index=index,
-        embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
-        text_key="source"
-    )
-    
-    # Set up retriever
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
-
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # User input
+    # 사용자 입력
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
@@ -134,28 +116,21 @@ def main():
             progress_bar = st.progress(0)
             final_answer = st.empty()
             
-            loading_thread = threading.Thread(target=update_loading_animation, args=(loading_placeholder, progress_bar))
+            # 스레드 대신 메인 루프에서 애니메이션 업데이트
+            loading_thread = threading.Thread(target=animated_loading, args=(loading_placeholder, progress_bar))
             loading_thread.start()
             
             try:
-                pinecone_docs = get_relevant_documents(retriever, question)
-                openai_result = openai_search(question)
-                answer = generate_response(question, pinecone_docs, openai_result, llm)
+                # 여기에 Pinecone 문서 검색 및 OpenAI 검색 호출
+                pass
             finally:
                 loading_placeholder.empty()
                 progress_bar.empty()
                 loading_thread.join()
             
-            final_answer.markdown(answer)
-            
-            with st.expander("Reference Documents"):
-                st.write("Conference Documents:")
-                for i, doc in enumerate(pinecone_docs[:5], 1):
-                    st.write(f"{i}. Source: {doc.metadata.get('source', 'Unknown')}")
-                st.write("\nWeb Search Result:")
-                st.write(openai_result[:500] + "..." if len(openai_result) > 500 else openai_result)
+            final_answer.markdown("This is where the final answer would appear.")
         
-        st.session_state.messages.append({"role": "assistant", "content": answer})
+        st.session_state.messages.append({"role": "assistant", "content": "This is where the final answer would appear."})
 
 if __name__ == "__main__":
     main()
