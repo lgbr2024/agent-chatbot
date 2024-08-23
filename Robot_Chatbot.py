@@ -1,14 +1,49 @@
+import streamlit as st
+import os
+from dotenv import load_dotenv
+from typing import List
+from pinecone import Pinecone
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_core.documents import Document
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_pinecone import PineconeVectorStore
+import time
+import threading
 import openai
+
+# 환경 변수 로드
+load_dotenv()
+os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
+os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
+
+def process_pinecone_results(results: List[Document]) -> List[Document]:
+    processed_docs = []
+    for doc in results:
+        if 'source' in doc.metadata:
+            filename = os.path.basename(doc.metadata['source'])
+            doc.page_content = filename
+            processed_docs.append(doc)
+    return processed_docs
+
+def get_relevant_documents(retriever, question: str) -> List[Document]:
+    try:
+        docs = retriever.get_relevant_documents(question)
+        return process_pinecone_results(docs)
+    except Exception as e:
+        st.error(f"Error retrieving documents from Pinecone: {str(e)}")
+        return []
 
 def openai_search(query: str) -> str:
     try:
-        response = openai.Engine("davinci").search(
-            documents=[],
-            query=query
+        response = openai.Completion.create(
+            engine="text-davinci-003",
+            prompt=f"Search the web and provide a summary for the following query: {query}",
+            max_tokens=100,
+            temperature=0.5,
         )
-        return response['data'][0]['text']
+        return response.choices[0].text.strip()
     except Exception as e:
-        print(f"Error in OpenAI search: {str(e)}")
+        st.error(f"Error in OpenAI search: {str(e)}")
         return "Error occurred during OpenAI search."
 
 def generate_response(question: str, pinecone_docs: List[Document], openai_result: str, llm: ChatOpenAI) -> str:
@@ -30,6 +65,32 @@ def generate_response(question: str, pinecone_docs: List[Document], openai_resul
     
     response = prompt.format(pinecone_context=pinecone_context, openai_result=openai_result, question=question)
     return llm.predict(response)
+
+def animated_loading():
+    animation = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
+    messages = [
+        "Searching conference documents...",
+        "Performing web search...",
+        "Analyzing information...",
+        "Generating comprehensive response..."
+    ]
+    i = 0
+    while True:
+        for frame in animation:
+            yield f"{frame} {messages[i % len(messages)]}"
+            time.sleep(0.1)
+        i += 1
+
+def update_loading_animation(placeholder, progress_bar):
+    loading_animation = animated_loading()
+    progress = 0
+    while not placeholder.empty():
+        placeholder.info(next(loading_animation))
+        progress += 0.5
+        if progress > 100:
+            progress = 0
+        progress_bar.progress(int(progress))
+        time.sleep(0.1)
 
 def main():
     st.title("Conference Q&A System with Web Search Integration")
