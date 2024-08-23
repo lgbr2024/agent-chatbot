@@ -139,6 +139,10 @@ def update_loading_animation(placeholder, progress_bar):
 def main():
     st.title("Conference Q&A System with Pinecone and Perplexity Integration")
     
+    # Initialize session state for chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
     # Initialize Pinecone
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index_name = "conference"
@@ -156,6 +160,11 @@ def main():
     
     # Set up retriever
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
+
+    # Display chat history
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
     # User input
     if question := st.chat_input("Please ask a question about the conference:"):
