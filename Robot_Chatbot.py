@@ -35,13 +35,16 @@ def get_relevant_documents(retriever, question: str) -> List[Document]:
 
 def openai_search(query: str) -> str:
     try:
-        response = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=f"Search the web and provide a summary for the following query: {query}",
+        response = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant."},
+                {"role": "user", "content": f"Search the web and provide a summary for the following query: {query}"}
+            ],
             max_tokens=100,
             temperature=0.5,
         )
-        return response.choices[0].text.strip()
+        return response.choices[0].message["content"].strip()
     except Exception as e:
         st.error(f"Error in OpenAI search: {str(e)}")
         return "Error occurred during OpenAI search."
