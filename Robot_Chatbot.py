@@ -10,12 +10,17 @@ from langchain_pinecone import PineconeVectorStore
 import requests
 import time
 import threading
+import logging
+
+# 로깅 설정
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
-os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity_api_key"]
+PERPLEXITY_API_KEY = st.secrets["perplexity_api_key"]
 
 def perplexity_search(query: str) -> str:
     try:
@@ -43,45 +48,8 @@ def perplexity_search(query: str) -> str:
         response.raise_for_status()  # Raises an HTTPError for bad responses
         return response.json()['choices'][0]['message']['content']
     except requests.RequestException as e:
-        st.error(f"Error in Perplexity search: {str(e)}")
+        logger.error(f"Error in Perplexity search: {str(e)}")
         return "Error occurred during web search."
-
-def generate_response(question: str, pinecone_docs: List[Document], llm: ChatOpenAI) -> str:
-    try:
-        # Pinecone-based response generation
-        if not pinecone_docs:
-            pinecone_response = "No relevant information found in the database."
-        else:
-            pinecone_context = "\n".join([doc.page_content for doc in pinecone_docs])
-            pinecone_prompt = f"""
-            Based on the following context from the Pinecone database, answer the question. 
-            If the context doesn't provide enough information, indicate that additional web search might be needed.
-
-            Context: {pinecone_context}
-
-            Question: {question}
-
-            Answer:
-            """
-            pinecone_response = llm.predict(pinecone_prompt)
-
-        # Check if Pinecone response indicates need for additional information
-        if "additional web search" in pinecone_response.lower() or "not enough information" in pinecone_response.lower():
-            perplexity_result = perplexity_search(question)
-            
-            if "Error occurred during web search" in perplexity_result:
-                return f"I apologize, but I couldn't find enough information to answer your question. The database search was insufficient, and there was an error with the web search. It would be best to consult other reliable sources for this information."
-            
-            # Integrate Pinecone and Perplexity information
-            final_response = integrate_information(pinecone_response, perplexity_result, question, llm)
-        else:
-            final_response = pinecone_response
-
-        return final_response
-    except Exception as e:
-        st.error(f"An error occurred while generating the response: {str(e)}")
-        return "I'm sorry, but an error occurred while processing your question. Please try again later or rephrase your question."
-
 
 def extract_key_points(text: str, llm: ChatOpenAI) -> List[str]:
     prompt = f"""
@@ -122,6 +90,60 @@ def integrate_information(pinecone_info: str, perplexity_info: str, question: st
 
     return llm.predict(integration_prompt)
 
+def get_relevant_documents(retriever, question: str) -> List[Document]:
+    try:
+        logger.debug(f"Searching for documents related to: {question}")
+        docs = retriever.get_relevant_documents(question)
+        logger.debug(f"Found {len(docs)} relevant documents")
+        for i, doc in enumerate(docs):
+            logger.debug(f"Document {i+1}: {doc.page_content[:100]}...")  # 문서 내용의 처음 100자만 로그로 출력
+        return docs
+    except Exception as e:
+        logger.error(f"Error retrieving documents: {str(e)}")
+        return []
+
+def generate_response(question: str, pinecone_docs: List[Document], llm: ChatOpenAI) -> str:
+    try:
+        # Pinecone-based response generation
+        if not pinecone_docs:
+            logger.warning("No relevant documents found in the database.")
+            pinecone_response = "No relevant information found in the database."
+        else:
+            pinecone_context = "\n".join([doc.page_content for doc in pinecone_docs])
+            logger.debug(f"Pinecone context: {pinecone_context[:500]}...")  # 컨텍스트의 처음 500자만 로그로 출력
+            pinecone_prompt = f"""
+            Based on the following context from the Pinecone database, answer the question. 
+            If the context doesn't provide enough information, indicate that additional web search might be needed.
+
+            Context: {pinecone_context}
+
+            Question: {question}
+
+            Answer:
+            """
+            pinecone_response = llm.predict(pinecone_prompt)
+            logger.debug(f"Pinecone response: {pinecone_response[:500]}...")  # 응답의 처음 500자만 로그로 출력
+
+        # Check if Pinecone response indicates need for additional information
+        if "additional web search" in pinecone_response.lower() or "not enough information" in pinecone_response.lower():
+            logger.info("Pinecone response insufficient, performing Perplexity search")
+            perplexity_result = perplexity_search(question)
+            
+            if "Error occurred during web search" in perplexity_result:
+                logger.error("Error occurred during Perplexity search")
+                return f"I apologize, but I couldn't find enough information to answer your question. The database search was insufficient, and there was an error with the web search. It would be best to consult other reliable sources for this information."
+            
+            # Integrate Pinecone and Perplexity information
+            final_response = integrate_information(pinecone_response, perplexity_result, question, llm)
+        else:
+            final_response = pinecone_response
+
+        logger.info("Response generation completed successfully")
+        return final_response
+    except Exception as e:
+        logger.error(f"An error occurred while generating the response: {str(e)}")
+        return "I'm sorry, but an error occurred while processing your question. Please try again later or rephrase your question."
+
 def animated_loading():
     animation = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
     messages = [
@@ -157,19 +179,31 @@ def main():
         st.session_state.messages = []
     
     # Initialize Pinecone
-    pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
-    index_name = "conference"
-    index = pc.Index(index_name)
-    
+    try:
+        pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
+        index_name = "conference"
+        index = pc.Index(index_name)
+        logger.info(f"Successfully connected to Pinecone index: {index_name}")
+    except Exception as e:
+        logger.error(f"Error connecting to Pinecone: {str(e)}")
+        st.error("Error connecting to the database. Please check your configuration.")
+        return
+
     # Initialize OpenAI
     llm = ChatOpenAI(model="gpt-4", temperature=0.7)
     
     # Set up Pinecone vector store
-    vectorstore = PineconeVectorStore(
-        index=index,
-        embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
-        text_key="text"
-    )
+    try:
+        vectorstore = PineconeVectorStore(
+            index=index,
+            embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
+            text_key="text"
+        )
+        logger.info("Successfully set up Pinecone vector store")
+    except Exception as e:
+        logger.error(f"Error setting up Pinecone vector store: {str(e)}")
+        st.error("Error setting up the vector store. Please check your configuration.")
+        return
     
     # Set up retriever
     retriever = vectorstore.as_retriever(search_kwargs={"k": 5})
@@ -195,7 +229,7 @@ def main():
             
             try:
                 # Retrieve documents using Pinecone
-                docs = retriever.get_relevant_documents(question)
+                docs = get_relevant_documents(retriever, question)
                 
                 # Generate response
                 answer = generate_response(question, docs, llm)
