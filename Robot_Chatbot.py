@@ -15,7 +15,7 @@ import requests
 load_dotenv()
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
-os.environ["PERPLEXITY_API_KEY"] = st.secrets["perplexity_api_key"]
+PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY") or st.secrets.get("perplexity_api_key")
 
 def process_pinecone_results(results: List[Document]) -> List[Document]:
     processed_docs = []
