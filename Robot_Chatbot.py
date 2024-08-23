@@ -1,73 +1,17 @@
-import streamlit as st
-import os
-from dotenv import load_dotenv
-from typing import List
-from pinecone import Pinecone
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
-from langchain_core.documents import Document
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_pinecone import PineconeVectorStore
-import time
-import threading
-import requests
+import openai
 
-# Load environment variables
-load_dotenv()
-os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
-os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
-PERPLEXITY_API_KEY = os.getenv("PERPLEXITY_API_KEY") or st.secrets.get("perplexity_api_key")
-
-def process_pinecone_results(results: List[Document]) -> List[Document]:
-    processed_docs = []
-    for doc in results:
-        if 'source' in doc.metadata:
-            filename = os.path.basename(doc.metadata['source'])
-            doc.page_content = filename
-            processed_docs.append(doc)
-    return processed_docs
-
-def get_relevant_documents(retriever, question: str) -> List[Document]:
+def openai_search(query: str) -> str:
     try:
-        docs = retriever.get_relevant_documents(question)
-        return process_pinecone_results(docs)
+        response = openai.Engine("davinci").search(
+            documents=[],
+            query=query
+        )
+        return response['data'][0]['text']
     except Exception as e:
-        st.error(f"Error retrieving documents from Pinecone: {str(e)}")
-        return []
+        print(f"Error in OpenAI search: {str(e)}")
+        return "Error occurred during OpenAI search."
 
-def perplexity_search(query: str) -> str:
-    url = "https://api.perplexity.ai/chat/completions"
-    payload = {
-        "model": "mixtral-8x7b-instruct",
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant that provides information based on web search results."
-            },
-            {
-                "role": "user",
-                "content": query
-            }
-        ]
-    }
-    headers = {
-        "accept": "application/json",
-        "content-type": "application/json",
-        "authorization": f"Bearer {PERPLEXITY_API_KEY}"
-    }
-
-    try:
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        data = response.json()
-        if 'choices' in data and len(data['choices']) > 0:
-            return data['choices'][0]['message']['content']
-        else:
-            return "Unexpected response format from API."
-    except requests.RequestException as e:
-        print(f"Error in Perplexity search: {str(e)}")
-        return "Error occurred during web search."
-
-def generate_response(question: str, pinecone_docs: List[Document], perplexity_result: str, llm: ChatOpenAI) -> str:
+def generate_response(question: str, pinecone_docs: List[Document], openai_result: str, llm: ChatOpenAI) -> str:
     pinecone_context = "\n".join([doc.page_content for doc in pinecone_docs])
     prompt = ChatPromptTemplate.from_template("""
     Based on the following information, answer the question. 
@@ -77,41 +21,15 @@ def generate_response(question: str, pinecone_docs: List[Document], perplexity_r
     {pinecone_context}
 
     Web search information:
-    {perplexity_result}
+    {openai_result}
 
     Question: {question}
 
     Provide a comprehensive answer that combines both sources of information:
     """)
     
-    response = prompt.format(pinecone_context=pinecone_context, perplexity_result=perplexity_result, question=question)
+    response = prompt.format(pinecone_context=pinecone_context, openai_result=openai_result, question=question)
     return llm.predict(response)
-
-def animated_loading():
-    animation = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"]
-    messages = [
-        "Searching conference documents...",
-        "Performing web search...",
-        "Analyzing information...",
-        "Generating comprehensive response..."
-    ]
-    i = 0
-    while True:
-        for frame in animation:
-            yield f"{frame} {messages[i % len(messages)]}"
-            time.sleep(0.1)
-        i += 1
-
-def update_loading_animation(placeholder, progress_bar):
-    loading_animation = animated_loading()
-    progress = 0
-    while not placeholder.empty():
-        placeholder.info(next(loading_animation))
-        progress += 0.5
-        if progress > 100:
-            progress = 0
-        progress_bar.progress(int(progress))
-        time.sleep(0.1)
 
 def main():
     st.title("Conference Q&A System with Web Search Integration")
@@ -157,8 +75,8 @@ def main():
             
             try:
                 pinecone_docs = get_relevant_documents(retriever, question)
-                perplexity_result = perplexity_search(question)
-                answer = generate_response(question, pinecone_docs, perplexity_result, llm)
+                openai_result = openai_search(question)
+                answer = generate_response(question, pinecone_docs, openai_result, llm)
             finally:
                 loading_placeholder.empty()
                 progress_bar.empty()
@@ -171,7 +89,7 @@ def main():
                 for i, doc in enumerate(pinecone_docs[:5], 1):
                     st.write(f"{i}. Source: {doc.metadata.get('source', 'Unknown')}")
                 st.write("\nWeb Search Result:")
-                st.write(perplexity_result[:500] + "..." if len(perplexity_result) > 500 else perplexity_result)
+                st.write(openai_result[:500] + "..." if len(openai_result) > 500 else openai_result)
         
         st.session_state.messages.append({"role": "assistant", "content": answer})
 
