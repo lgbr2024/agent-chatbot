@@ -18,6 +18,10 @@ import logging
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
+# Load environment variables
+load_dotenv()
+
+# Set up API keys
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
 
@@ -110,24 +114,11 @@ def maximal_marginal_relevance(
         candidate_indices.remove(max_index)
     return selected_indices
 
-def main():
-    st.title("Robot Conference Q&A System")
-    
-    # Initialize session state for chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
+def setup_chain():
     # Initialize Pinecone
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index_name = "conference"
     index = pc.Index(index_name)
-    
-    # Select GPT model
-    if "gpt_model" not in st.session_state:
-        st.session_state.gpt_model = "gpt-4o"
-    
-    st.session_state.gpt_model = st.selectbox("Select GPT model:", ("gpt-4o", "gpt-4o-mini"), index=("gpt-4o", "gpt-4o-mini").index(st.session_state.gpt_model))
-    llm = ChatOpenAI(model=st.session_state.gpt_model)
     
     # Set up Pinecone vector store
     vectorstore = ModifiedPineconeVectorStore(
@@ -142,7 +133,7 @@ def main():
         search_kwargs={"k": 10, "fetch_k": 20, "lambda_mult": 0.7}
     )
     
-    # Set up prompt template and chain
+    # Set up prompt template
     template = """
     <prompt>
     Question: {question} 
@@ -206,6 +197,9 @@ def main():
         return "\n\n" + "\n\n".join(formatted)
 
     format = itemgetter("docs") | RunnableLambda(format_docs)
+    
+    # Set up chain
+    llm = ChatOpenAI(model=st.session_state.get("gpt_model", "gpt-4o"))
     answer = prompt | llm | StrOutputParser()
     chain = (
         RunnableParallel(question=RunnablePassthrough(), docs=retriever)
@@ -213,15 +207,29 @@ def main():
         .assign(answer=answer)
         .pick(["answer", "docs"])
     )
+    
+    return chain, retriever
 
-    # Display chat history
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+def main():
+    st.title("Robot Conference Q&A System")
     
     # Initialize session state for chat history
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    
+    # Select GPT model
+    if "gpt_model" not in st.session_state:
+        st.session_state.gpt_model = "gpt-4o"
+    
+    st.session_state.gpt_model = st.selectbox("Select GPT model:", ("gpt-4o", "gpt-4o-mini"), index=("gpt-4o", "gpt-4o-mini").index(st.session_state.gpt_model))
+    
+    # Setup chain and retriever
+    chain, retriever = setup_chain()
+    
+    # Display chat history
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
     
     # User input
     if question := st.chat_input("Please ask a question about the conference:"):
@@ -251,17 +259,10 @@ def main():
                 # Prepare input for the chain
                 chain_input = {
                     "question": question,
-                    "context": "",  # Provide appropriate context if needed
                 }
-                
-                # Retrieve relevant documents
-                # Note: Make sure 'retriever' is properly defined before this point
-                docs = retriever.get_relevant_documents(question)
-                chain_input["context"] = "\n".join([doc.page_content for doc in docs])
                 
                 logging.info("Invoking chain")
                 # Invoke the chain
-                # Note: Make sure 'chain' is properly defined before this point
                 response = chain.invoke(chain_input)
                 logging.info(f"Chain response type: {type(response)}")
                 
@@ -299,9 +300,9 @@ def main():
             st.markdown(answer)
             
             # Display sources if available
-            if 'docs' in locals():
+            if isinstance(response, dict) and 'docs' in response:
                 with st.expander("Sources"):
-                    for doc in docs:
+                    for doc in response['docs']:
                         st.write(f"- {doc.metadata.get('source', 'Unknown source')}")
             
             # Add assistant's response to chat history
