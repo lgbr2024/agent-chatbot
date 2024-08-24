@@ -153,88 +153,41 @@ def main():
     </audience>
     <knowledge_base>Conference file saved in vector database</knowledge_base>
     <goal>Find and provide organized content related to the conference that matches the questioner's inquiry, along with sources, to help derive project insights.</goal>
-    <research-principles>
-      <principle>
-        <name>Insightful Analysis and Insight Generation</name>
-        <points>
-          <point>Emphasize deep analysis and meaningful insights beyond simple phenomenon observation.</point>
-          <point>Don't just see the dots, create lines.</point>
-          <point>While individual pieces have meaning, they should be viewed from a more evolved perspective.</point>
-        </points>
-      </principle>
-
-      <principle>
-        <name>Long-term Perspective and Proactive Response</name>
-        <points>
-          <point>Stress the importance of a long-term view, considering the 'plane' 5-10 years in the future, not just the present.</point>
-          <point>Emphasize the importance of proactive preparation and readiness before problems arise.</point>
-        </points>
-      </principle>
-
-      <principle>
-        <name>Sensitivity and Adaptability to Change</name>
-        <points>
-          <point>Highlight the need for awareness of rapidly changing environments and quick adaptation.</point>
-          <point>Encourage approaching issues with new perspectives, breaking away from existing preconceptions.</point>
-        </points>
-      </principle>
-
-      <principle>
-        <name>Value Creation and Inducing Practical Change</name>
-        <points>
-          <point>Stress moving beyond mere analysis or reporting to actually create value and drive change.</point>
-          <point>Mention the importance of inducing real change in clients or organizations.</point>
-        </points>
-      </principle>
-
-      <principle>
-        <name>Importance of Networking and Collaboration</name>
-        <points>
-          <point>Emphasize the importance of collaboration and network building between departments and with external entities.</point>
-          <point>Loose connections should always be within reach when needed.</point>
-        </points>
-      </principle>
-
-      <principle>
-        <name>Proactive Researcher Role</name>
-        <points>
-          <point>Stress the role of researchers in proactively identifying and solving problems without waiting for instructions.</point>
-          <point>Emphasize doing work that hasn't been assigned.</point>
-        </points>
-      </principle>
-
-      <principle>
-        <name>Practical and Specific Approach</name>
-        <points>
-          <point>Highlight the importance of developing concrete, applicable solutions rather than abstract discussions.</point>
-          <point>Mention the need to consider how to respond and what preparations to begin.</point>
-        </points>
-      </principle>
-    </research-principles>
     </context>
   
     <task>
     <description>
      Describe about 15,000+ words for covering industrial changes, issues, and response strategies related to the conference. Explicitly reflect and incorporate the [research principles] throughout your analysis and recommendations. 
-     </description>
+    </description>
     
     <format>
-     Respond to the following given question. Gather the details as thoroughly as possible, then gategorize them according to the following format :
-        - Topic:
-        - Fact: {  }
-        - Your opinion: { }
-        - Source: {file name}
+     [Conference Overview]
+        - Explain the overall context of the conference related to the question
+        - Introduce the main points or topics
+                   
+     [Contents]
+        - Analyze the key content discussed at the conference and reference.
+        - For each key session or topic:
+          - Gather the details as thoroughly as possible, then categorize them according to the following format: 
+            - Topic : 
+            - Fact : {1. Provide a detailed description of approximately 5 sentences. 2. Include specific examples, data points, or case studies mentioned in the session. }
+            - Your opinion : {Provide a detailed description of approximately 3 sentences.}
+            - Source : {Show 2~3 data sources for each key topic}
+          
+      [Conclusion]
+        - Summarize new trends based on the conference content
+        - Present derived insights
+        - Suggest 3 follow-up questions that the LG Group representative might ask, and provide brief answers to each (3~4 sentences)
+
     </format>
     
     <style>Business writing with clear and concise sentences targeted at executives</style>
     
     <constraints>
-      <item>Use the provided context to answer the question</item>
-      <item>If you don't know the answer, admit it honestly</item>
-      <item>Answer in Korean and provide rich sentences to enhance the quality of the answer</item>
-      <item>Adhere to the length constraints for each section</item>
-      <item>[Conference Overview] about 4000 words /  [Contents] about 7000 wodrs / [Conclusion] about 4000 words</item>
-      <item>Explicitly mention and apply the research principles throughout the response</item>
+        - USE THE PROVIDED CONTEXT TO ANSWER THE QUESTION
+        - IF YOU DON'T KNOW THE ANSWER, ADMIT IT HONESTLY
+        - ANSWER IN KOREAN AND PROVIDE RICH SENTENCES TO ENHANCE THE QUALITY OF THE ANSWER
+        - ADHERE TO THE LENGTH CONSTRAINTS FOR EACH SECTION. [CONFERENCE OVERVIEW] ABOUT 4000 WORDS / [CONTENTS] ABOUT 7000 WORDS / [CONCLUSION] ABOUT 4000 WORDS
     </constraints>
     </task>
   
@@ -295,68 +248,54 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-       # User input
+    # User input
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
         
         with st.chat_message("assistant"):
-            # 상태 업데이트를 위한 플레이스홀더 생성
+            # Create placeholders for status updates
             status_placeholder = st.empty()
             progress_bar = st.progress(0)
             
             try:
-                # 1단계: 쿼리 처리
+                # Step 1: Query Processing
                 status_placeholder.text("Processing query...")
                 progress_bar.progress(25)
-                time.sleep(1)  # 처리 시간 시뮬레이션
+                time.sleep(1)  # Simulate processing time
                 
-                # 2단계: 데이터베이스 검색
+                # Step 2: Searching Database
                 status_placeholder.text("Searching database...")
                 progress_bar.progress(50)
+                response = chain.invoke(question)
+                time.sleep(1)  # Simulate search time
                 
-                # 필요한 모든 키가 입력에 있는지 확인
-                chain_input = {
-                    "question": question,
-                    # Add any other required keys here
-                }
-                
-                response = chain.invoke(chain_input)
-                time.sleep(1)  # 검색 시간 시뮬레이션
-                
-                # 3단계: 답변 생성
+                # Step 3: Generating Answer
                 status_placeholder.text("Generating answer...")
                 progress_bar.progress(75)
-                answer = response.get('answer', "Sorry, I couldn't generate an answer.")
-                time.sleep(1)  # 생성 시간 시뮬레이션
+                answer = response['answer']
+                time.sleep(1)  # Simulate generation time
                 
-                # 4단계: 응답 마무리
+                # Step 4: Finalizing Response
                 status_placeholder.text("Finalizing response...")
                 progress_bar.progress(100)
-                time.sleep(0.5)  # 완료를 보여주기 위한 짧은 일시 정지
+                time.sleep(0.5)  # Short pause to show completion
                 
-            except KeyError as e:
-                st.error(f"An error occurred: Missing key {str(e)}")
-                answer = "I'm sorry, but I encountered an error while processing your question. Please try again."
-            except Exception as e:
-                st.error(f"An unexpected error occurred: {str(e)}")
-                answer = "I'm sorry, but an unexpected error occurred. Please try again later."
             finally:
-                # 상태 표시 지우기
+                # Clear status displays
                 status_placeholder.empty()
                 progress_bar.empty()
             
-            # 답변 표시
+            # Display the answer
             st.markdown(answer)
             
-            # 출처가 있다면 표시
-            if 'docs' in response:
-                with st.expander("Sources"):
-                    for doc in response['docs']:
-                        st.write(f"- {doc.metadata['source']}")
+            # Display sources
+            with st.expander("Sources"):
+                for doc in response['docs']:
+                    st.write(f"- {doc.metadata['source']}")
             
-            # 어시스턴트의 응답을 채팅 기록에 추가
+            # Add assistant's response to chat history
             st.session_state.messages.append({"role": "assistant", "content": answer})
 
 if __name__ == "__main__":
