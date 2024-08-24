@@ -76,7 +76,7 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
             Document(
                 page_content=results['matches'][i]['metadata'].get(self._text_key, ""),
                 metadata={
-                    'source': results['matches'][i]['metadata'].get('source', '').split('data\\')[-1] if 'source' in results['matches'][i]['metadata'] else 'Unknown'
+                    'source': results['matches'][i]['metadata'].get('source', '').replace('C:\\Users\\minje\\data2\\', '') if 'source' in results['matches'][i]['metadata'] else 'Unknown'
                 }
             )
             for i in mmr_selected
