@@ -210,7 +210,7 @@ def setup_chain():
     
     return chain, retriever
 
-def main():
+    def main():
     st.title("Robot Conference Q&A System")
     
     # Initialize session state for chat history
@@ -231,7 +231,7 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # User input
+     # User input
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
@@ -265,6 +265,7 @@ def main():
                 # Invoke the chain
                 response = chain.invoke(chain_input)
                 logging.info(f"Chain response type: {type(response)}")
+                logging.info(f"Chain response content: {response}")  # Log the entire response
                 
                 # Step 3: Answer Generation
                 status_placeholder.text("Generating answer...")
@@ -272,13 +273,19 @@ def main():
                 
                 # Handle different response types
                 if isinstance(response, dict):
-                    answer = response.get('answer', "Sorry, I couldn't generate an answer.")
+                    if 'answer' in response:
+                        answer = response['answer']
+                        if isinstance(answer, dict):
+                            answer = str(answer)  # Convert dict to string if necessary
+                    else:
+                        answer = str(response)  # Convert the entire response to string
                 elif isinstance(response, str):
                     answer = response
                 else:
                     answer = str(response)
                 
                 logging.info(f"Generated answer type: {type(answer)}")
+                logging.info(f"Generated answer content: {answer[:100]}...")  # Log the first 100 characters
                 
                 # Step 4: Finalizing Response
                 status_placeholder.text("Finalizing response...")
@@ -310,3 +317,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+Version 12 of 12
+
+
+
