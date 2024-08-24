@@ -295,54 +295,68 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # User input
+       # User input
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
         
         with st.chat_message("assistant"):
-            # Create placeholders for status updates
+            # 상태 업데이트를 위한 플레이스홀더 생성
             status_placeholder = st.empty()
             progress_bar = st.progress(0)
             
             try:
-                # Step 1: Query Processing
+                # 1단계: 쿼리 처리
                 status_placeholder.text("Processing query...")
                 progress_bar.progress(25)
-                time.sleep(1)  # Simulate processing time
+                time.sleep(1)  # 처리 시간 시뮬레이션
                 
-                # Step 2: Searching Database
+                # 2단계: 데이터베이스 검색
                 status_placeholder.text("Searching database...")
                 progress_bar.progress(50)
-                response = chain.invoke(question)
-                time.sleep(1)  # Simulate search time
                 
-                # Step 3: Generating Answer
+                # 필요한 모든 키가 입력에 있는지 확인
+                chain_input = {
+                    "question": question,
+                    # Add any other required keys here
+                }
+                
+                response = chain.invoke(chain_input)
+                time.sleep(1)  # 검색 시간 시뮬레이션
+                
+                # 3단계: 답변 생성
                 status_placeholder.text("Generating answer...")
                 progress_bar.progress(75)
-                answer = response['answer']
-                time.sleep(1)  # Simulate generation time
+                answer = response.get('answer', "Sorry, I couldn't generate an answer.")
+                time.sleep(1)  # 생성 시간 시뮬레이션
                 
-                # Step 4: Finalizing Response
+                # 4단계: 응답 마무리
                 status_placeholder.text("Finalizing response...")
                 progress_bar.progress(100)
-                time.sleep(0.5)  # Short pause to show completion
+                time.sleep(0.5)  # 완료를 보여주기 위한 짧은 일시 정지
                 
+            except KeyError as e:
+                st.error(f"An error occurred: Missing key {str(e)}")
+                answer = "I'm sorry, but I encountered an error while processing your question. Please try again."
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {str(e)}")
+                answer = "I'm sorry, but an unexpected error occurred. Please try again later."
             finally:
-                # Clear status displays
+                # 상태 표시 지우기
                 status_placeholder.empty()
                 progress_bar.empty()
             
-            # Display the answer
+            # 답변 표시
             st.markdown(answer)
             
-            # Display sources
-            with st.expander("Sources"):
-                for doc in response['docs']:
-                    st.write(f"- {doc.metadata['source']}")
+            # 출처가 있다면 표시
+            if 'docs' in response:
+                with st.expander("Sources"):
+                    for doc in response['docs']:
+                        st.write(f"- {doc.metadata['source']}")
             
-            # Add assistant's response to chat history
+            # 어시스턴트의 응답을 채팅 기록에 추가
             st.session_state.messages.append({"role": "assistant", "content": answer})
 
 if __name__ == "__main__":
