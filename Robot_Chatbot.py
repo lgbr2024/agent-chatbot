@@ -107,7 +107,7 @@ def maximal_marginal_relevance(
     return selected_indices
 
 def main():
-    st.title("Conference Q&A System")
+    st.title("Robot Conference Q&A System")
     
     # Initialize session state for chat history
     if "messages" not in st.session_state:
