@@ -190,39 +190,6 @@ def main():
         - ADHERE TO THE LENGTH CONSTRAINTS FOR EACH SECTION. [CONFERENCE OVERVIEW] ABOUT 4000 WORDS / [CONTENTS] ABOUT 7000 WORDS / [CONCLUSION] ABOUT 4000 WORDS
     </constraints>
     </task>
-  
- <team>
-    <member>
-      <name>John</name>
-      <role>15-year consultant skilled in hypothesis-based thinking</role>
-      <expertise>Special ability in business planning and creating outlines</expertise>
-    </member>
-    <member>
-      <name>EJ</name>
-      <role>20-year electronics industry research expert</role>
-      <expertise>Special ability in finding new business cases and fact-based findings</expertise>
-    </member>
-    <member>
-      <name>JD</name>
-      <role>20-year business problem-solving expert</role>
-      <expertise>
-        <item>Advancing growth methods for electronics manufacturing companies</item>
-        <item>Future of customer changes and electronics business</item>
-        <item>Future AI development directions</item>
-        <item>Problem-solving and decision-making regarding the future of manufacturing</item>
-      </expertise>
-    </member>
-    <member>
-      <name>DS</name>
-      <role>25-year consultant leader, Ph.D. in Business Administration</role>
-      <expertise>Special ability to refine content for delivery to LG affiliate CEOs and LG Group representatives</expertise>
-    </member>
-    <member>
-      <name>YM</name>
-      <role>30-year Ph.D. in Economics and Business Administration</role>
-      <expertise>Overall leader overseeing the general quality of content</expertise>
-    </member>
-  </team>
     </prompt>
     """
     prompt = ChatPromptTemplate.from_template(template)
@@ -259,29 +226,46 @@ def main():
             status_placeholder = st.empty()
             progress_bar = st.progress(0)
             
+            # Initialize response and answer variables
+            response = None
+            answer = "I'm sorry, but an unexpected error occurred. Please try again later."
+            
             try:
                 # Step 1: Query Processing
                 status_placeholder.text("Processing query...")
                 progress_bar.progress(25)
-                time.sleep(1)  # Simulate processing time
                 
-                # Step 2: Searching Database
+                # Step 2: Database Search
                 status_placeholder.text("Searching database...")
                 progress_bar.progress(50)
-                response = chain.invoke(question)
-                time.sleep(1)  # Simulate search time
                 
-                # Step 3: Generating Answer
+                # Prepare input for the chain
+                chain_input = {
+                    "question": question,
+                    "context": "",  # Provide appropriate context if needed
+                }
+                
+                # Retrieve relevant documents
+                docs = retriever.get_relevant_documents(question)
+                chain_input["context"] = "\n".join([doc.page_content for doc in docs])
+                
+                # Invoke the chain
+                response = chain.invoke(chain_input)
+                
+                # Step 3: Answer Generation
                 status_placeholder.text("Generating answer...")
                 progress_bar.progress(75)
-                answer = response['answer']
-                time.sleep(1)  # Simulate generation time
+                answer = response.get('answer', "Sorry, I couldn't generate an answer.")
                 
                 # Step 4: Finalizing Response
                 status_placeholder.text("Finalizing response...")
                 progress_bar.progress(100)
-                time.sleep(0.5)  # Short pause to show completion
                 
+            except KeyError as e:
+                st.error(f"An error occurred: Missing key {str(e)}")
+                answer = "I'm sorry, but I encountered an error while processing your question. Please try again."
+            except Exception as e:
+                st.error(f"An unexpected error occurred: {str(e)}")
             finally:
                 # Clear status displays
                 status_placeholder.empty()
@@ -290,10 +274,11 @@ def main():
             # Display the answer
             st.markdown(answer)
             
-            # Display sources
-            with st.expander("Sources"):
-                for doc in response['docs']:
-                    st.write(f"- {doc.metadata['source']}")
+            # Display sources if available
+            if docs:
+                with st.expander("Sources"):
+                    for doc in docs:
+                        st.write(f"- {doc.metadata.get('source', 'Unknown source')}")
             
             # Add assistant's response to chat history
             st.session_state.messages.append({"role": "assistant", "content": answer})
