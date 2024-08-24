@@ -13,6 +13,10 @@ from langchain_pinecone import PineconeVectorStore
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import time
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
@@ -215,6 +219,10 @@ def main():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
+    # Initialize session state for chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
     # User input
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
@@ -247,11 +255,13 @@ def main():
                 }
                 
                 # Retrieve relevant documents
+                # Note: Make sure 'retriever' is properly defined before this point
                 docs = retriever.get_relevant_documents(question)
                 chain_input["context"] = "\n".join([doc.page_content for doc in docs])
                 
                 logging.info("Invoking chain")
                 # Invoke the chain
+                # Note: Make sure 'chain' is properly defined before this point
                 response = chain.invoke(chain_input)
                 logging.info(f"Chain response type: {type(response)}")
                 
@@ -289,7 +299,7 @@ def main():
             st.markdown(answer)
             
             # Display sources if available
-            if docs:
+            if 'docs' in locals():
                 with st.expander("Sources"):
                     for doc in docs:
                         st.write(f"- {doc.metadata.get('source', 'Unknown source')}")
