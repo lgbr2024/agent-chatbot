@@ -13,15 +13,7 @@ from langchain_pinecone import PineconeVectorStore
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import time
-import logging
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-
-# Load environment variables
-load_dotenv()
-
-# Set up API keys
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
 
@@ -114,11 +106,24 @@ def maximal_marginal_relevance(
         candidate_indices.remove(max_index)
     return selected_indices
 
-def setup_chain():
+def main():
+    st.title("Conference Q&A System")
+    
+    # Initialize session state for chat history
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
     # Initialize Pinecone
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index_name = "conference"
     index = pc.Index(index_name)
+    
+    # Select GPT model
+    if "gpt_model" not in st.session_state:
+        st.session_state.gpt_model = "gpt-4o"
+    
+    st.session_state.gpt_model = st.selectbox("Select GPT model:", ("gpt-4o", "gpt-4o-mini"), index=("gpt-4o", "gpt-4o-mini").index(st.session_state.gpt_model))
+    llm = ChatOpenAI(model=st.session_state.gpt_model)
     
     # Set up Pinecone vector store
     vectorstore = ModifiedPineconeVectorStore(
@@ -133,13 +138,13 @@ def setup_chain():
         search_kwargs={"k": 10, "fetch_k": 20, "lambda_mult": 0.7}
     )
     
-    # Set up prompt template
+    # Set up prompt template and chain
     template = """
     <prompt>
     Question: {question} 
     Context: {context} 
     Answer:
-  
+
     <context>
     <role>Strategic consultant for LG Group, tasked with uncovering new trends and insights based on various conference trends.</role>
     <audience>
@@ -149,12 +154,12 @@ def setup_chain():
     <knowledge_base>Conference file saved in vector database</knowledge_base>
     <goal>Find and provide organized content related to the conference that matches the questioner's inquiry, along with sources, to help derive project insights.</goal>
     </context>
-  
+
     <task>
     <description>
      Describe about 15,000+ words for covering industrial changes, issues, and response strategies related to the conference. Explicitly reflect and incorporate the [research principles] throughout your analysis and recommendations. 
     </description>
-    
+
     <format>
      [Conference Overview]
         - Explain the overall context of the conference related to the question
@@ -165,19 +170,18 @@ def setup_chain():
         - For each key session or topic:
           - Gather the details as thoroughly as possible, then categorize them according to the following format: 
             - Topic : 
-            - Fact : {1. Provide a detailed description of approximately 5 sentences. 2. Include specific examples, data points, or case studies mentioned in the session. }
-            - Your opinion : {Provide a detailed description of approximately 3 sentences.}
-            - Source : {Show 2~3 data sources for each key topic}
+            - Fact : {{1. Provide a detailed description of approximately 5 sentences. 2. Include specific examples, data points, or case studies mentioned in the session. }}
+            - Your opinion : {{Provide a detailed description of approximately 3 sentences.}}
+            - Source : {{Show 2~3 data sources for each key topic}}
           
       [Conclusion]
         - Summarize new trends based on the conference content
         - Present derived insights
         - Suggest 3 follow-up questions that the LG Group representative might ask, and provide brief answers to each (3~4 sentences)
-
     </format>
-    
+
     <style>Business writing with clear and concise sentences targeted at executives</style>
-    
+
     <constraints>
         - USE THE PROVIDED CONTEXT TO ANSWER THE QUESTION
         - IF YOU DON'T KNOW THE ANSWER, ADMIT IT HONESTLY
@@ -197,9 +201,6 @@ def setup_chain():
         return "\n\n" + "\n\n".join(formatted)
 
     format = itemgetter("docs") | RunnableLambda(format_docs)
-    
-    # Set up chain
-    llm = ChatOpenAI(model=st.session_state.get("gpt_model", "gpt-4o"))
     answer = prompt | llm | StrOutputParser()
     chain = (
         RunnableParallel(question=RunnablePassthrough(), docs=retriever)
@@ -207,25 +208,7 @@ def setup_chain():
         .assign(answer=answer)
         .pick(["answer", "docs"])
     )
-    
-    return chain, retriever
 
-def main():
-    st.title("Robot Conference Q&A System")
-    
-    # Initialize session state for chat history
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    
-    # Select GPT model
-    if "gpt_model" not in st.session_state:
-        st.session_state.gpt_model = "gpt-4o"
-    
-    st.session_state.gpt_model = st.selectbox("Select GPT model:", ("gpt-4o", "gpt-4o-mini"), index=("gpt-4o", "gpt-4o-mini").index(st.session_state.gpt_model))
-    
-    # Setup chain and retriever
-    chain, retriever = setup_chain()
-    
     # Display chat history
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
@@ -242,68 +225,29 @@ def main():
             status_placeholder = st.empty()
             progress_bar = st.progress(0)
             
-            # Initialize response and answer variables
-            response = None
-            answer = "I'm sorry, but an unexpected error occurred. Please try again later."
-            
             try:
                 # Step 1: Query Processing
                 status_placeholder.text("Processing query...")
                 progress_bar.progress(25)
-                logging.info(f"Processing query: {question}")
+                time.sleep(1)  # Simulate processing time
                 
-                # Step 2: Database Search
+                # Step 2: Searching Database
                 status_placeholder.text("Searching database...")
                 progress_bar.progress(50)
+                response = chain.invoke(question)
+                time.sleep(1)  # Simulate search time
                 
-                # Ensure question is a string
-                if isinstance(question, dict):
-                    question = str(question)  # Convert dict to string if necessary
-                
-                # Prepare input for the chain
-                chain_input = {
-                    "question": question,
-                }
-                
-                logging.info(f"Chain input: {chain_input}")
-                logging.info("Invoking chain")
-                
-                # Invoke the chain
-                response = chain.invoke(chain_input)
-                logging.info(f"Chain response type: {type(response)}")
-                logging.info(f"Chain response content: {response}")  # Log the entire response
-                
-                # Step 3: Answer Generation
+                # Step 3: Generating Answer
                 status_placeholder.text("Generating answer...")
                 progress_bar.progress(75)
-                
-                # Handle different response types
-                if isinstance(response, dict):
-                    if 'answer' in response:
-                        answer = response['answer']
-                        if isinstance(answer, dict):
-                            answer = str(answer)  # Convert dict to string if necessary
-                    else:
-                        answer = str(response)  # Convert the entire response to string
-                elif isinstance(response, str):
-                    answer = response
-                else:
-                    answer = str(response)
-                
-                logging.info(f"Generated answer type: {type(answer)}")
-                logging.info(f"Generated answer content: {answer[:100]}...")  # Log the first 100 characters
+                answer = response['answer']
+                time.sleep(1)  # Simulate generation time
                 
                 # Step 4: Finalizing Response
                 status_placeholder.text("Finalizing response...")
                 progress_bar.progress(100)
+                time.sleep(0.5)  # Short pause to show completion
                 
-            except KeyError as e:
-                logging.error(f"KeyError occurred: {str(e)}")
-                st.error(f"An error occurred: Missing key {str(e)}")
-                answer = "I'm sorry, but I encountered an error while processing your question. Please try again."
-            except Exception as e:
-                logging.error(f"Unexpected error occurred: {str(e)}", exc_info=True)
-                st.error(f"An unexpected error occurred: {str(e)}")
             finally:
                 # Clear status displays
                 status_placeholder.empty()
@@ -312,11 +256,10 @@ def main():
             # Display the answer
             st.markdown(answer)
             
-            # Display sources if available
-            if isinstance(response, dict) and 'docs' in response:
-                with st.expander("Sources"):
-                    for doc in response['docs']:
-                        st.write(f"- {doc.metadata.get('source', 'Unknown source')}")
+            # Display sources
+            with st.expander("Sources"):
+                for doc in response['docs']:
+                    st.write(f"- {doc.metadata['source']}")
             
             # Add assistant's response to chat history
             st.session_state.messages.append({"role": "assistant", "content": answer})
