@@ -219,23 +219,11 @@ def main():
      </description>
     
     <format>
-     [Conference Overview]
-        - Explain the overall context of the conference related to the question
-        - Introduce the main points or topics
-                   
-     [Contents]
-        - Analyze the key content discussed at the conference and reference.
-        - For each key session or topic:
-          - Provide a detailed description of approximately 5 sentences.
-          - Include specific examples, data points, or case studies mentioned in the session.
-          - Show 2~3 data sources for each key content
-          
-      [Conclusion]
-        - Summarize new trends based on the conference content
-        - Present derived insights, emphasizing the 'Value Creation and Inducing Practical Change' principle
-        - Suggest future strategic directions, incorporating the 'Proactive Researcher Role' principle
-        - Suggest 3 follow-up questions that the LG Group representative might ask, and provide brief answers to each (3~4 sentences)
-
+     Respond to the following given question. Gather the details as thoroughly as possible, then gategorize them according to the following format :
+        - Topic:
+        - Fact: {  }
+        - Your opinion: { }
+        - Source: {file name}
     </format>
     
     <style>Business writing with clear and concise sentences targeted at executives</style>
