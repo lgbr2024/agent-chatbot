@@ -210,7 +210,7 @@ def setup_chain():
     
     return chain, retriever
 
-    def main():
+def main():
     st.title("Robot Conference Q&A System")
     
     # Initialize session state for chat history
@@ -231,7 +231,7 @@ def setup_chain():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-     # User input
+    # User input
     if question := st.chat_input("Please ask a question about the conference:"):
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
@@ -317,8 +317,3 @@ def setup_chain():
 
 if __name__ == "__main__":
     main()
-
-Version 12 of 12
-
-
-
