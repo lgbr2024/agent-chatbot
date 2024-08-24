@@ -234,6 +234,7 @@ def main():
                 # Step 1: Query Processing
                 status_placeholder.text("Processing query...")
                 progress_bar.progress(25)
+                logging.info(f"Processing query: {question}")
                 
                 # Step 2: Database Search
                 status_placeholder.text("Searching database...")
@@ -249,22 +250,35 @@ def main():
                 docs = retriever.get_relevant_documents(question)
                 chain_input["context"] = "\n".join([doc.page_content for doc in docs])
                 
+                logging.info("Invoking chain")
                 # Invoke the chain
                 response = chain.invoke(chain_input)
+                logging.info(f"Chain response type: {type(response)}")
                 
                 # Step 3: Answer Generation
                 status_placeholder.text("Generating answer...")
                 progress_bar.progress(75)
-                answer = response.get('answer', "Sorry, I couldn't generate an answer.")
+                
+                # Handle different response types
+                if isinstance(response, dict):
+                    answer = response.get('answer', "Sorry, I couldn't generate an answer.")
+                elif isinstance(response, str):
+                    answer = response
+                else:
+                    answer = str(response)
+                
+                logging.info(f"Generated answer type: {type(answer)}")
                 
                 # Step 4: Finalizing Response
                 status_placeholder.text("Finalizing response...")
                 progress_bar.progress(100)
                 
             except KeyError as e:
+                logging.error(f"KeyError occurred: {str(e)}")
                 st.error(f"An error occurred: Missing key {str(e)}")
                 answer = "I'm sorry, but I encountered an error while processing your question. Please try again."
             except Exception as e:
+                logging.error(f"Unexpected error occurred: {str(e)}", exc_info=True)
                 st.error(f"An unexpected error occurred: {str(e)}")
             finally:
                 # Clear status displays
