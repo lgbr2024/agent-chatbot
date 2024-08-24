@@ -256,12 +256,18 @@ def main():
                 status_placeholder.text("Searching database...")
                 progress_bar.progress(50)
                 
+                # Ensure question is a string
+                if isinstance(question, dict):
+                    question = str(question)  # Convert dict to string if necessary
+                
                 # Prepare input for the chain
                 chain_input = {
                     "question": question,
                 }
                 
+                logging.info(f"Chain input: {chain_input}")
                 logging.info("Invoking chain")
+                
                 # Invoke the chain
                 response = chain.invoke(chain_input)
                 logging.info(f"Chain response type: {type(response)}")
