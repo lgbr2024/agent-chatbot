@@ -1,6 +1,8 @@
 import os
 import re
-import glob
+import time
+import streamlit as st
+from typing import List, Tuple, Dict, Any
 from pinecone import Pinecone
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.documents import Document
@@ -8,10 +10,8 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
 from langchain_pinecone import PineconeVectorStore
-import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
-import time
 
 # Pinecone 및 API 키 설정
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
@@ -59,10 +59,11 @@ Answer:
 """
 chatbot_prompt = ChatPromptTemplate.from_template(chatbot_template)
 
+# Streamlit 앱 메인 함수
 def main():
     st.title("📚 Conference Q&A Chatbot")
 
-    # Initialize session state
+    # 세션 상태 초기화
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
@@ -97,10 +98,13 @@ def main():
             formatted.append(f"출처: {source}\n태그: {tags}\n내용: {text}")
         return "\n\n".join(formatted)
 
-    format = itemgetter("docs") | RunnableLambda(format_docs)
+    # 문서와 프롬프트를 결합하여 답변 생성
+    format = lambda docs: "\n\n".join(
+        [f"출처: {doc.metadata.get('source', 'Unknown')}\n내용: {doc.page_content}" for doc in docs]
+    )
     chain = RunnableParallel(question=RunnablePassthrough(), docs=retriever) | chatbot_prompt | llm | StrOutputParser()
 
-    # 이전 메시지 출력
+    # 이전 대화 표시
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
