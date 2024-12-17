@@ -26,28 +26,6 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
         self._text_key = text_key
         self._namespace = namespace
 
-    def similarity_search_with_score_by_vector(
-        self, embedding: List[float], k: int = 8, filter: Dict[str, Any] = None, namespace: str = None
-    ) -> List[Tuple[Document, float]]:
-        namespace = namespace or self._namespace
-        results = self.index.query(
-            vector=embedding,
-            top_k=k,
-            include_metadata=True,
-            filter=filter,
-            namespace=namespace,
-        )
-        return [
-            (
-                Document(
-                    page_content=result["metadata"].get(self._text_key, ""),
-                    metadata={k: v for k, v in result["metadata"].items() if k != self._text_key}
-                ),
-                result["score"],
-            )
-            for result in results["matches"]
-        ]
-
 # Chatbot 프롬프트
 chatbot_template = """
 Question: {question}
@@ -59,7 +37,6 @@ Answer:
 """
 chatbot_prompt = ChatPromptTemplate.from_template(chatbot_template)
 
-# Streamlit 앱 메인 함수
 def main():
     st.title("📚 Conference Q&A Chatbot")
 
@@ -99,10 +76,10 @@ def main():
         return "\n\n".join(formatted)
 
     # 문서와 프롬프트를 결합하여 답변 생성
-    format = lambda docs: "\n\n".join(
-        [f"출처: {doc.metadata.get('source', 'Unknown')}\n내용: {doc.page_content}" for doc in docs]
-    )
-    chain = RunnableParallel(question=RunnablePassthrough(), docs=retriever) | chatbot_prompt | llm | StrOutputParser()
+    def create_response(question: str) -> str:
+        docs = retriever.invoke(question)  # 단순 문자열로 전달
+        context = format_docs(docs)
+        return chatbot_prompt | llm | StrOutputParser() | {"question": question, "context": context}
 
     # 이전 대화 표시
     for message in st.session_state.messages:
@@ -118,7 +95,7 @@ def main():
         with st.chat_message("assistant"):
             # 검색 및 답변 생성
             st.write("검색 중...")
-            response = chain.invoke({"question": question})
+            response = create_response(question)
             st.markdown(response)
 
             # 채팅 기록 저장
