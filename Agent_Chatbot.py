@@ -77,9 +77,17 @@ def main():
 
     # 문서와 프롬프트를 결합하여 답변 생성
     def create_response(question: str) -> str:
-        docs = retriever.invoke(question)  # 단순 문자열로 전달
-        context = format_docs(docs)
-        return chatbot_prompt | llm | StrOutputParser() | {"question": question, "context": context}
+    # 검색된 문서 포맷팅
+    docs = retriever.invoke(question)
+    context = format_docs(docs)
+
+    # 프롬프트를 사용해 데이터 생성
+    prompt_input = {"question": question, "context": context}
+    prompt = chatbot_prompt.invoke(prompt_input)
+
+    # LLM 호출 및 결과 반환
+    llm_response = llm.invoke(prompt)
+    return StrOutputParser().invoke(llm_response)
 
     # 이전 대화 표시
     for message in st.session_state.messages:
