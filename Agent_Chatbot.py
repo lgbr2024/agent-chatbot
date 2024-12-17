@@ -8,10 +8,7 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
 from langchain_pinecone import PineconeVectorStore
-import numpy as np
-from sklearn.metrics.pairwise import cosine_similarity
 
 # Pinecone 및 API 키 설정
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
@@ -77,17 +74,17 @@ def main():
 
     # 문서와 프롬프트를 결합하여 답변 생성
     def create_response(question: str) -> str:
-    # 검색된 문서 포맷팅
-    docs = retriever.invoke(question)
-    context = format_docs(docs)
+        # 검색된 문서 포맷팅
+        docs = retriever.invoke(question)
+        context = format_docs(docs)
 
-    # 프롬프트를 사용해 데이터 생성
-    prompt_input = {"question": question, "context": context}
-    prompt = chatbot_prompt.invoke(prompt_input)
+        # 프롬프트를 사용해 데이터 생성
+        prompt_input = {"question": question, "context": context}
+        prompt = chatbot_prompt.invoke(prompt_input)
 
-    # LLM 호출 및 결과 반환
-    llm_response = llm.invoke(prompt)
-    return StrOutputParser().invoke(llm_response)
+        # LLM 호출 및 결과 반환
+        llm_response = llm.invoke(prompt)
+        return StrOutputParser().invoke(llm_response)
 
     # 이전 대화 표시
     for message in st.session_state.messages:
