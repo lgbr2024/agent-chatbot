@@ -1,8 +1,6 @@
-import streamlit as st
 import os
-from dotenv import load_dotenv
-from operator import itemgetter
-from typing import List, Tuple, Dict, Any
+import re
+import glob
 from pinecone import Pinecone
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.documents import Document
@@ -10,13 +8,16 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnableLambda, RunnableParallel, RunnablePassthrough
 from langchain_pinecone import PineconeVectorStore
+import streamlit as st
 import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 import time
 
+# Pinecone 및 API 키 설정
 os.environ["OPENAI_API_KEY"] = st.secrets["openai_api_key"]
 os.environ["PINECONE_API_KEY"] = st.secrets["pinecone_api_key"]
 
+# Pinecone 커스텀 벡터 스토어
 class ModifiedPineconeVectorStore(PineconeVectorStore):
     def __init__(self, index, embedding, text_key: str = "text", namespace: str = ""):
         super().__init__(index, embedding, text_key, namespace)
@@ -33,7 +34,6 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
             vector=embedding,
             top_k=k,
             include_metadata=True,
-            include_values=True,
             filter=filter,
             namespace=namespace,
         )
@@ -48,302 +48,82 @@ class ModifiedPineconeVectorStore(PineconeVectorStore):
             for result in results["matches"]
         ]
 
-    def max_marginal_relevance_search_by_vector(
-        self, embedding: List[float], k: int = 8, fetch_k: int = 30,
-        lambda_mult: float = 0.7, filter: Dict[str, Any] = None, namespace: str = None
-    ) -> List[Document]:
-        namespace = namespace or self._namespace
-        results = self.index.query(
-            vector=embedding,
-            top_k=fetch_k,
-            include_metadata=True,
-            include_values=True,
-            filter=filter,
-            namespace=namespace,
-        )
-        if not results['matches']:
-            return []
-
-        embeddings = [match['values'] for match in results['matches']]
-        mmr_selected = maximal_marginal_relevance(
-            np.array(embedding, dtype=np.float32),
-            embeddings,
-            k=min(k, len(results['matches'])),
-            lambda_mult=lambda_mult
-        )
-
-        return [
-            Document(
-                page_content=results['matches'][i]['metadata'].get(self._text_key, ""),
-                metadata={
-                    'source': results['matches'][i]['metadata'].get('source', '').replace('C:\\Users\\minje\\data\\', '') if 'source' in results['matches'][i]['metadata'] else 'Unknown'
-                }
-            )
-            for i in mmr_selected
-        ]
-
-def maximal_marginal_relevance(
-    query_embedding: np.ndarray,
-    embedding_list: List[np.ndarray],
-    k: int = 4,
-    lambda_mult: float = 0.5
-) -> List[int]:
-    similarity_scores = cosine_similarity([query_embedding], embedding_list)[0]
-    selected_indices = []
-    candidate_indices = list(range(len(embedding_list)))
-    for _ in range(k):
-        if not candidate_indices:
-            break
-
-        mmr_scores = [
-            lambda_mult * similarity_scores[i] - (1 - lambda_mult) * max(
-                [cosine_similarity([embedding_list[i]], [embedding_list[s]])[0][0] for s in selected_indices] or [0]
-            )
-            for i in candidate_indices
-        ]
-        max_index = candidate_indices[np.argmax(mmr_scores)]
-        selected_indices.append(max_index)
-        candidate_indices.remove(max_index)
-    return selected_indices
+# Chatbot 프롬프트
+chatbot_template = """
+Question: {question}
+Context: {context}
+Answer:
+- 질문에 대한 답변을 메타데이터의 정보를 최대한 활용하여 작성하세요.
+- 주어진 문서의 출처(source), 핵심 내용(text), 그리고 관련된 태그(tag_contents, tag_people, tag_company)를 활용해서 구체적이고 정확한 답변을 제공하세요.
+- 한국어로 대화형 톤으로 작성하세요.
+"""
+chatbot_prompt = ChatPromptTemplate.from_template(chatbot_template)
 
 def main():
-    st.title("🤞Conference Q&A System")
+    st.title("📚 Conference Q&A Chatbot")
 
     # Initialize session state
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "mode" not in st.session_state:
-        st.session_state.mode = "Report Mode"
 
-    # Initialize Pinecone
+    # Pinecone 초기화
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
     index_name = "aiconference"
     index = pc.Index(index_name)
 
-    # Select GPT model
-    if "gpt_model" not in st.session_state:
-        st.session_state.gpt_model = "gpt-4o"
-
-    st.session_state.gpt_model = st.selectbox("Select GPT model:", ("gpt-4o", "gpt-4o-mini"), index=("gpt-4o", "gpt-4o-mini").index(st.session_state.gpt_model))
-    llm = ChatOpenAI(model=st.session_state.gpt_model)
-
-    # Set up Pinecone vector store
+    # OpenAI 모델 설정
+    llm = ChatOpenAI(model="gpt-4o")
     vectorstore = ModifiedPineconeVectorStore(
         index=index,
         embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
-        text_key="source"
+        text_key="text"
     )
 
-    # Set up retriever
+    # 검색 설정
     retriever = vectorstore.as_retriever(
-        search_type='mmr',
-        search_kwargs={"k": 10, "fetch_k": 20, "lambda_mult": 0.7}
+        search_type='similarity',
+        search_kwargs={"k": 10}
     )
 
-    # Set up prompt template for report mode
-    report_template = """
-    <prompt>
-    Question: {question}
-    Context: {context}
-    Answer:
-    <context>
-    <role>Strategic consultant for LG Group, tasked with uncovering new trends and insights based on various conference trends.</role>
-    <audience>
-      -LG Group individual business executives
-      -LG Group representative
-    </audience>
-    <knowledge_base>Conference file saved in vector database</knowledge_base>
-    <goal>Find and provide organized content related to the conference that matches the questioner's inquiry, along with sources, to help derive project insights. provide a comprehensive, well-structured response in the style of Harvard Business Review (HBR)</goal>
-    </context>
-    <task>
-    <description>
-     Describe about 15,000+ words for covering industrial changes, issues, and response strategies related to the conference. Explicitly reflect and incorporate the [research principles] throughout your analysis and recommendations.
-    </description>
-    <format>
-     [Conference Overview]
-        - Explain the overall context of the conference related to the question.
-        - Begin with: "In relation to this topic, the following key themes were addressed at [specific conference name]:"
-        - List the main topics, providing a brief 1-2 sentence explanation for each, mentioning speakers or company names where possible.
-        - Mention the scale of the conference (number of attendees, number of presentation sessions, etc.) and its importance to enhance credibility.
-        - Summarize in 1-2 sentences the impact or significance of this conference on the industry.
-
-     [Contents]
-        - Analyze the key content discussed at the conference and reference.
-        - For each key session or topic:
-          - Gather the details as thoroughly as possible, then categorize them according to the following format:
-            - Topic :
-            - Fact : {{1. Provide a detailed description of approximately 5 sentences. 2. Include specific examples, numerical datas, or case studies mentioned in the session to enhance credibility and feasibility }}
-            - Your opinion : {{Provide a detailed description of approximately 3 sentences.}}
-            - Source : {{Show 2~3 data sources for each key topic}}
-
-      [Conclusion]
-        - Summarize new trends based on the conference content
-        - Present derived insights from the conference that relate to the user's question. Focus on forward-looking perspectives and industry developments.
-        - Suggest 3 follow-up questions that the LG Group representative might ask, and provide brief answers to each (3~4 sentences)
-    </format>
-    <style>Business writing with clear and concise sentences targeted at executives</style>
-    <constraints>
-        - USE THE PROVIDED CONTEXT TO ANSWER THE QUESTION
-        - IF YOU DON'T KNOW THE ANSWER, ADMIT IT HONESTLY
-        - ANSWER IN KOREAN AND PROVIDE RICH SENTENCES TO ENHANCE THE QUALITY OF THE ANSWER
-        - ADHERE TO THE LENGTH CONSTRAINTS FOR EACH SECTION. [CONFERENCE OVERVIEW] ABOUT 4000 WORDS / [CONTENTS] ABOUT 7000 WORDS / [CONCLUSION] ABOUT 4000 WORDS
-    </constraints>
-    </task>
-    <team>
-        <member>
-        <name>John</name>
-        <role>15-year consultant skilled in hypothesis-based thinking</role>
-        <expertise>Special ability in business planning and creating outlines</expertise>
-        </member>
-        <member>
-        <name>EJ</name>
-        <role>20-year electronics industry research expert</role>
-        <expertise>Special ability in finding new business cases and fact-based findings</expertise>
-        </member>
-        <member>
-        <name>JD</name>
-        <role>20-year business problem-solving expert</role>
-        <expertise>
-        <item>Advancing growth methods for electronics manufacturing companies</item>
-        <item>Future of customer changes and electronics business</item>
-        <item>Future AI development directions</item>
-        <item>Problem-solving and decision-making regarding the future of manufacturing</item>
-        </expertise>
-        </member>
-        <member>
-        <name>DS</name>
-        <role>25-year consultant leader, Ph.D. in Business Administration</role>
-        <expertise>Special ability to refine content for delivery to LG affiliate CEOs and LG Group representatives</expertise>
-        </member>
-        <member>
-        <name>YM</name>
-        <role>30-year Ph.D. in Economics and Business Administration</role>
-        <expertise>Overall leader overseeing the general quality of content</expertise>
-        </member>
-        </team>
-    </prompt>
-    """
-    report_prompt = ChatPromptTemplate.from_template(report_template)
-    # Set up prompt template for chatbot mode
-    chatbot_template = """
-    Question: {question}
-    Context: {context}
-    Answer the question based on the given context in 4,000 words.  Use a conversational tone and answer in Korean.
-    """
-    chatbot_prompt = ChatPromptTemplate.from_template(chatbot_template)
-
+    # 문서 포맷 함수
     def format_docs(docs: List[Document]) -> str:
         formatted = []
         for doc in docs:
             source = doc.metadata.get('source', 'Unknown source')
-            formatted.append(f"Source: {source}")
-        return "\n\n" + "\n\n".join(formatted)
+            text = doc.page_content
+            tags = ', '.join(
+                f"{k}: {v}" for k, v in doc.metadata.items() if k.startswith("tag_")
+            )
+            formatted.append(f"출처: {source}\n태그: {tags}\n내용: {text}")
+        return "\n\n".join(formatted)
 
     format = itemgetter("docs") | RunnableLambda(format_docs)
+    chain = RunnableParallel(question=RunnablePassthrough(), docs=retriever) | chatbot_prompt | llm | StrOutputParser()
 
-    def get_report_chain(prompt):
-        answer = prompt | llm | StrOutputParser()
-        return (
-            RunnableParallel(question=RunnablePassthrough(), docs=retriever)
-            .assign(context=format)
-            .assign(answer=answer)
-            .pick(["answer", "docs"])
-        )
-
-    def get_chatbot_chain(prompt):
-        answer = prompt | llm | StrOutputParser()
-        return (
-            RunnableParallel(question=RunnablePassthrough(), docs=retriever)
-            .assign(context=format)
-            .assign(answer=answer)
-            .pick("answer")
-        )
-
-    report_chain = get_report_chain(report_prompt)
-    chatbot_chain = get_chatbot_chain(chatbot_prompt)
-
-    # Mode selection
-    new_mode = st.radio("Select mode:", ("Report Mode", "Chatbot Mode"), key="mode_selection")
-    if new_mode != st.session_state.mode:
-        st.session_state.mode = new_mode
-        st.session_state.messages = []  # Clear chat history when mode changes
-        st.rerun()  # Changed from st.experimental_rerun()
-
-    # Display current mode (for debugging)
-    st.write(f"Current mode: {st.session_state.mode}")
-
-    # Reset function
-    def reset_conversation():
-        st.session_state.messages = []
-        st.rerun()  # Changed from st.experimental_rerun()
-
-    # Check for reset keywords
-    reset_keywords = ["처음으로", "초기화", "다시", "안녕"]
-
-    # Display chat history
+    # 이전 메시지 출력
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # User input
-    if question := st.chat_input("Please ask a question about the conference:"):
-        # Check for reset keywords
-        if any(keyword in question for keyword in reset_keywords):
-            reset_conversation()
-        else:
-            st.session_state.messages.append({"role": "user", "content": question})
-            with st.chat_message("user"):
-                st.markdown(question)
+    # 사용자 입력
+    if question := st.chat_input("컨퍼런스 관련 질문을 입력하세요:"):
+        st.session_state.messages.append({"role": "user", "content": question})
+        with st.chat_message("user"):
+            st.markdown(question)
 
-            with st.chat_message("assistant"):
-                # Create placeholders for status updates
-                status_placeholder = st.empty()
-                progress_bar = st.progress(0)
+        with st.chat_message("assistant"):
+            # 검색 및 답변 생성
+            st.write("검색 중...")
+            response = chain.invoke({"question": question})
+            st.markdown(response)
 
-                try:
-                    # Step 1: Query Processing
-                    status_placeholder.text("Processing query...")
-                    progress_bar.progress(25)
-                    time.sleep(1)  # Simulate processing time
+            # 채팅 기록 저장
+            st.session_state.messages.append({"role": "assistant", "content": response})
 
-                    # Step 2: Searching Database
-                    status_placeholder.text("Searching database...")
-                    progress_bar.progress(50)
-                    chain = report_chain if st.session_state.mode == "Report Mode" else chatbot_chain
-                    response = chain.invoke(question)
-                    time.sleep(1)  # Simulate search time
-
-                    # Step 3: Generating Answer
-                    status_placeholder.text("Generating answer...")
-                    progress_bar.progress(75)
-                    answer = response['answer'] if st.session_state.mode == "Report Mode" else response
-                    time.sleep(1)  # Simulate generation time
-
-                    # Step 4: Finalizing Response
-                    status_placeholder.text("Finalizing response...")
-                    progress_bar.progress(100)
-                    time.sleep(0.5)  # Short pause to show completion
-
-                finally:
-                    # Clear status displays
-                    status_placeholder.empty()
-                    progress_bar.empty()
-
-                # Display the answer
-                st.markdown(answer)
-
-                # Display sources (only for Report Mode)
-                if st.session_state.mode == "Report Mode":
-                    with st.expander("Sources"):
-                        for doc in response['docs']:
-                            st.write(f"- {doc.metadata['source']}")
-
-                # Add assistant's response to chat history
-                st.session_state.messages.append({"role": "assistant", "content": answer})
-
-    # Add a button to reset the conversation
-    if st.button("Reset Conversation"):
-        reset_conversation()
+    # 대화 초기화 버튼
+    if st.button("대화 초기화"):
+        st.session_state.messages = []
+        st.rerun()
 
 if __name__ == "__main__":
     main()
