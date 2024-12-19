@@ -49,7 +49,7 @@ def main():
     llm = ChatOpenAI(model="gpt-4o")
     vectorstore = ModifiedPineconeVectorStore(
         index=index,
-        embedding=OpenAIEmbeddings(model="text-embedding-curie-001"),
+        embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
         text_key="text"
     )
 
@@ -92,29 +92,36 @@ def main():
 
     # 문서와 프롬프트를 결합하여 답변 생성
     def create_response(question: str, keywords: Dict[str, Any]) -> str:
-        # 입력 유효성 검사
+        # 질문 유효성 검사
         if not isinstance(question, str) or not question.strip():
-            return "질문이 유효하지 않습니다. 질문을 다시 입력해주세요."
+            return "질문이 비어 있습니다. 유효한 질문을 입력해주세요."
 
-        # 검색된 문서 포맷팅
-        retriever = create_retriever_with_filter(keywords)
-        docs = retriever.invoke(question)
-        if not docs:
-            return "검색된 문서가 없습니다. 질문과 관련된 문서를 찾을 수 없습니다."
+        # 필터 유효성 검사
+        if not keywords or not any(keywords.values()):
+            return "검색 조건이 비어 있습니다. 필터 조건을 다시 입력해주세요."
 
-        # 문서 포맷 및 길이 제한 적용
-        context = format_docs(docs)
-        max_length = 2000  # OpenAI API 입력 길이 제한 (문자 기준)
-        context = context[:max_length]
-
-        # 프롬프트를 사용해 데이터 생성
-        prompt_input = {"question": question, "context": context}
         try:
+            # 필터를 적용한 retriever 생성
+            retriever = create_retriever_with_filter(keywords)
+            
+            # 문서 검색
+            docs = retriever.invoke(question)
+            if not docs:
+                return "검색된 문서가 없습니다. 질문과 관련된 문서를 찾을 수 없습니다."
+
+            # 문서 포맷 및 길이 제한 적용
+            context = format_docs(docs)
+            max_length = 2000  # OpenAI API 입력 길이 제한 (문자 기준)
+            context = context[:max_length]
+
+            # 프롬프트 생성 및 LLM 호출
+            prompt_input = {"question": question, "context": context}
             prompt = chatbot_prompt.invoke(prompt_input)
             llm_response = llm.invoke(prompt)
             return StrOutputParser().invoke(llm_response)
+
         except Exception as e:
-            st.error(f"OpenAI API 호출 중 오류가 발생했습니다: {e}")
+            st.error(f"오류가 발생했습니다: {e}")
             return "답변 생성 중 오류가 발생했습니다. 다시 시도해주세요."
 
     # 이전 대화 표시
