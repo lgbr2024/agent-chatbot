@@ -30,12 +30,13 @@ Context: {context}
 Answer:
 - 질문에 대한 답변을 메타데이터의 정보를 최대한 활용하여 작성하세요.
 - 주어진 문서의 출처(source), 핵심 내용(text), 그리고 관련된 태그(tag_contents, tag_people, tag_company)를 활용해서 구체적이고 정확한 답변을 제공하세요.
-- 한국어로 대화형 톤으로 작성하세요.
+- 한국어로 대화형 톤으로 2천자 내외로 작성하세요.
+- 해당 내용 문단의 끝에는 출처, 발표자 내용을 꼭 표시해주세요.
 """
 chatbot_prompt = ChatPromptTemplate.from_template(chatbot_template)
 
 def main():
-    st.title("📚 Conference Q&A Chatbot")
+    st.title("📚 Agent Conference Q&A Chatbot")
 
     # 세션 상태 초기화
     if "messages" not in st.session_state:
