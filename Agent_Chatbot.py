@@ -51,15 +51,58 @@ def main():
     llm = ChatOpenAI(model="gpt-4o")
     vectorstore = ModifiedPineconeVectorStore(
         index=index,
-        embedding=OpenAIEmbeddings(model="text-embedding-ada-002"),
+        embedding=OpenAIEmbeddings(model="text-embedding-curie-001"),
         text_key="text"
     )
+
+    
+    
+    # 검색 설정
+    #retriever = vectorstore.as_retriever(
+    #    search_type='similarity',
+    #    search_kwargs={"k": 10}
+    #)
 
     # 검색 설정
     retriever = vectorstore.as_retriever(
         search_type='similarity',
-        search_kwargs={"k": 10}
+        search_kwargs={
+            "k": 10,  # 반환할 문서 개수
+            "filter": None  # 필터 추가
+        }
     )
+    
+    def create_retriever_with_filter(keywords: Dict[str, Any]) -> ModifiedPineconeVectorStore:
+        """
+        검색 필터를 적용하여 retriever를 생성하는 함수.
+    
+        :param keywords: 사용자가 입력한 키워드 및 검색 조건 (태그, 출처 등)
+        :return: 필터가 적용된 retriever 객체
+        """
+        # 사용자 키워드에서 필터 조건 생성
+        filter_conditions = {}
+        
+        # 태그 필터 추가
+        if "tag_contents" in keywords:
+            filter_conditions["tag_contents"] = {"$in": keywords["tag_contents"]}  # 태그 목록
+        if "tag_people" in keywords:
+            filter_conditions["tag_people"] = {"$in": keywords["tag_people"]}
+        if "tag_company" in keywords:
+            filter_conditions["tag_company"] = {"$in": keywords["tag_company"]}
+        
+        # 출처 필터 추가
+        if "source" in keywords:
+            filter_conditions["source"] = {"$in": keywords["source"]}
+    
+        # retriever 객체 생성
+        return vectorstore.as_retriever(
+            search_type='similarity',
+            search_kwargs={
+                "k": 10,
+                "filter": filter_conditions
+            }
+        )
+
 
     # 문서 포맷 함수
     def format_docs(docs: List[Document]) -> str:
