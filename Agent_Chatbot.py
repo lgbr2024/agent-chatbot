@@ -39,6 +39,8 @@ def main():
     # 세션 상태 초기화
     if "messages" not in st.session_state:
         st.session_state.messages = []
+    if "filters" not in st.session_state:
+        st.session_state.filters = {}
 
     # Pinecone 초기화
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -130,15 +132,16 @@ def main():
             st.markdown(message["content"])
 
     # 사용자 입력
-    question = st.chat_input("컨퍼런스 관련 질문을 입력하세요:")
-    if question:
-        # 사용자로부터 필터 키워드 입력받기
+    with st.form("filter_form"):
         st.write("질문과 함께 필터 조건을 입력하세요:")
+        question = st.text_input("질문을 입력하세요")
         tag_contents = st.text_input("태그 내용 (쉼표로 구분)", "")
         tag_people = st.text_input("관련 인물 (쉼표로 구분)", "")
         tag_company = st.text_input("관련 회사 (쉼표로 구분)", "")
         source = st.text_input("출처 (쉼표로 구분)", "")
+        submitted = st.form_submit_button("검색")
 
+    if submitted and question:
         # 필터 키워드 생성
         keywords = {
             "tag_contents": [tag.strip() for tag in tag_contents.split(",") if tag.strip()],
@@ -163,6 +166,7 @@ def main():
     # 대화 초기화 버튼
     if st.button("대화 초기화"):
         st.session_state.messages = []
+        st.session_state.filters = {}
         st.rerun()
 
 if __name__ == "__main__":
