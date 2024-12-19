@@ -53,34 +53,30 @@ def main():
         text_key="text"
     )
 
-    # 검색 필터 설정 함수
-    def create_retriever_with_filter(keywords: Dict[str, Any]) -> ModifiedPineconeVectorStore:
+    # 검색 필터 및 유사도 기반 검색
+    def create_retriever_with_filter(question: str, keywords: Dict[str, Any]) -> List[Document]:
         """
-        Pinecone retriever에 필터 조건을 적용하는 함수.
+        Pinecone retriever에 필터 조건을 반영하여 유사도 기반 검색 수행.
         """
-        filter_conditions = {}
+        # 키워드를 질문에 추가하여 검색 질의 생성
+        additional_context = " ".join([
+            f"{key}: {', '.join(values)}" for key, values in keywords.items() if values
+        ])
+        extended_query = f"{question} {additional_context}"
 
-        # 필터 조건 추가
-        if keywords.get("tag_contents"):
-            filter_conditions["tag_contents"] = {"$in": keywords["tag_contents"]}
-        if keywords.get("tag_people"):
-            filter_conditions["tag_people"] = {"$in": keywords["tag_people"]}
-        if keywords.get("tag_company"):
-            filter_conditions["tag_company"] = {"$in": keywords["tag_company"]}
-        if keywords.get("source"):
-            filter_conditions["source"] = {"$in": keywords["source"]}
+        # 디버깅: 검색 질의 출력
+        st.write("검색 질의:", extended_query)
 
-        # 디버깅: 필터 조건 출력
-        st.write("적용된 필터 조건:", filter_conditions)
-
-        # 필터 조건이 없으면 None으로 설정
-        return vectorstore.as_retriever(
+        # 유사도 검색 수행
+        retriever = vectorstore.as_retriever(
             search_type='similarity',
-            search_kwargs={
-                "k": 10,
-                "filter": filter_conditions if filter_conditions else None
-            }
+            search_kwargs={"k": 10}
         )
+        docs = retriever.invoke(extended_query)
+
+        # 디버깅: 검색된 문서 출력
+        st.write("검색된 문서:", docs)
+        return docs
 
     # 문서 포맷 함수
     def format_docs(docs: List[Document]) -> str:
@@ -104,17 +100,11 @@ def main():
             return "질문이 비어 있습니다. 유효한 질문을 입력해주세요."
 
         try:
-            # 필터가 적용된 retriever 생성
-            retriever = create_retriever_with_filter(keywords)
-
-            # 문서 검색
-            docs = retriever.invoke(question)
+            # 필터와 함께 검색 수행
+            docs = create_retriever_with_filter(question, keywords)
             if not docs:
                 st.write("검색된 문서가 없습니다. 필터 조건을 확인하세요.")
                 return "검색된 문서가 없습니다. 조건을 수정하고 다시 시도해보세요."
-
-            # 디버깅: 검색된 문서 내용 출력
-            st.write("검색된 문서:", docs)
 
             # 문서 포맷 및 길이 제한 적용
             context = format_docs(docs)
