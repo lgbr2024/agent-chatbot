@@ -39,8 +39,6 @@ def main():
     # 세션 상태 초기화
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "filters" not in st.session_state:
-        st.session_state.filters = {}
 
     # Pinecone 초기화
     pc = Pinecone(api_key=os.getenv("PINECONE_API_KEY"))
@@ -59,24 +57,22 @@ def main():
     def create_retriever_with_filter(keywords: Dict[str, Any]) -> ModifiedPineconeVectorStore:
         filter_conditions = {}
 
-        # 태그 필터 추가
+        # 태그 필터 추가 (조건이 있을 경우에만 추가)
         if keywords.get("tag_contents"):
             filter_conditions["tag_contents"] = {"$in": keywords["tag_contents"]}
         if keywords.get("tag_people"):
             filter_conditions["tag_people"] = {"$in": keywords["tag_people"]}
         if keywords.get("tag_company"):
             filter_conditions["tag_company"] = {"$in": keywords["tag_company"]}
-
-        # 출처 필터 추가
         if keywords.get("source"):
             filter_conditions["source"] = {"$in": keywords["source"]}
 
-        # 필터 조건을 적용한 retriever 생성
+        # 필터 조건이 없으면 None으로 설정
         return vectorstore.as_retriever(
             search_type='similarity',
             search_kwargs={
                 "k": 10,
-                "filter": filter_conditions
+                "filter": filter_conditions if filter_conditions else None
             }
         )
 
@@ -98,10 +94,6 @@ def main():
         if not isinstance(question, str) or not question.strip():
             return "질문이 비어 있습니다. 유효한 질문을 입력해주세요."
 
-        # 필터 유효성 검사
-        if not keywords or not any(keywords.values()):
-            return "검색 조건이 비어 있습니다. 필터 조건을 다시 입력해주세요."
-
         try:
             # 필터를 적용한 retriever 생성
             retriever = create_retriever_with_filter(keywords)
@@ -109,7 +101,7 @@ def main():
             # 문서 검색
             docs = retriever.invoke(question)
             if not docs:
-                return "검색된 문서가 없습니다. 질문과 관련된 문서를 찾을 수 없습니다."
+                return "질문에 대한 관련 문서를 찾을 수 없습니다. 입력 내용을 확인해주세요."
 
             # 문서 포맷 및 길이 제한 적용
             context = format_docs(docs)
@@ -166,7 +158,6 @@ def main():
     # 대화 초기화 버튼
     if st.button("대화 초기화"):
         st.session_state.messages = []
-        st.session_state.filters = {}
         st.rerun()
 
 if __name__ == "__main__":
