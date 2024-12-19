@@ -1,8 +1,6 @@
 import os
-import re
-import time
 import streamlit as st
-from typing import List, Tuple, Dict, Any
+from typing import List, Dict, Any
 from pinecone import Pinecone
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.documents import Document
@@ -55,46 +53,23 @@ def main():
         text_key="text"
     )
 
-    
-    
-    # 검색 설정
-    #retriever = vectorstore.as_retriever(
-    #    search_type='similarity',
-    #    search_kwargs={"k": 10}
-    #)
-
-    # 검색 설정
-    retriever = vectorstore.as_retriever(
-        search_type='similarity',
-        search_kwargs={
-            "k": 10,  # 반환할 문서 개수
-            "filter": None  # 필터 추가
-        }
-    )
-    
+    # 검색 필터 설정 함수
     def create_retriever_with_filter(keywords: Dict[str, Any]) -> ModifiedPineconeVectorStore:
-        """
-        검색 필터를 적용하여 retriever를 생성하는 함수.
-    
-        :param keywords: 사용자가 입력한 키워드 및 검색 조건 (태그, 출처 등)
-        :return: 필터가 적용된 retriever 객체
-        """
-        # 사용자 키워드에서 필터 조건 생성
         filter_conditions = {}
-        
+
         # 태그 필터 추가
-        if "tag_contents" in keywords:
-            filter_conditions["tag_contents"] = {"$in": keywords["tag_contents"]}  # 태그 목록
-        if "tag_people" in keywords:
+        if keywords.get("tag_contents"):
+            filter_conditions["tag_contents"] = {"$in": keywords["tag_contents"]}
+        if keywords.get("tag_people"):
             filter_conditions["tag_people"] = {"$in": keywords["tag_people"]}
-        if "tag_company" in keywords:
+        if keywords.get("tag_company"):
             filter_conditions["tag_company"] = {"$in": keywords["tag_company"]}
-        
+
         # 출처 필터 추가
-        if "source" in keywords:
+        if keywords.get("source"):
             filter_conditions["source"] = {"$in": keywords["source"]}
-    
-        # retriever 객체 생성
+
+        # 필터 조건을 적용한 retriever 생성
         return vectorstore.as_retriever(
             search_type='similarity',
             search_kwargs={
@@ -102,7 +77,6 @@ def main():
                 "filter": filter_conditions
             }
         )
-
 
     # 문서 포맷 함수
     def format_docs(docs: List[Document]) -> str:
@@ -117,18 +91,31 @@ def main():
         return "\n\n".join(formatted)
 
     # 문서와 프롬프트를 결합하여 답변 생성
-    def create_response(question: str) -> str:
+    def create_response(question: str, keywords: Dict[str, Any]) -> str:
+        # 입력 유효성 검사
+        if not isinstance(question, str) or not question.strip():
+            return "질문이 유효하지 않습니다. 질문을 다시 입력해주세요."
+
         # 검색된 문서 포맷팅
+        retriever = create_retriever_with_filter(keywords)
         docs = retriever.invoke(question)
+        if not docs:
+            return "검색된 문서가 없습니다. 질문과 관련된 문서를 찾을 수 없습니다."
+
+        # 문서 포맷 및 길이 제한 적용
         context = format_docs(docs)
+        max_length = 2000  # OpenAI API 입력 길이 제한 (문자 기준)
+        context = context[:max_length]
 
         # 프롬프트를 사용해 데이터 생성
         prompt_input = {"question": question, "context": context}
-        prompt = chatbot_prompt.invoke(prompt_input)
-
-        # LLM 호출 및 결과 반환
-        llm_response = llm.invoke(prompt)
-        return StrOutputParser().invoke(llm_response)
+        try:
+            prompt = chatbot_prompt.invoke(prompt_input)
+            llm_response = llm.invoke(prompt)
+            return StrOutputParser().invoke(llm_response)
+        except Exception as e:
+            st.error(f"OpenAI API 호출 중 오류가 발생했습니다: {e}")
+            return "답변 생성 중 오류가 발생했습니다. 다시 시도해주세요."
 
     # 이전 대화 표시
     for message in st.session_state.messages:
@@ -136,7 +123,23 @@ def main():
             st.markdown(message["content"])
 
     # 사용자 입력
-    if question := st.chat_input("컨퍼런스 관련 질문을 입력하세요:"):
+    question = st.chat_input("컨퍼런스 관련 질문을 입력하세요:")
+    if question:
+        # 사용자로부터 필터 키워드 입력받기
+        st.write("질문과 함께 필터 조건을 입력하세요:")
+        tag_contents = st.text_input("태그 내용 (쉼표로 구분)", "")
+        tag_people = st.text_input("관련 인물 (쉼표로 구분)", "")
+        tag_company = st.text_input("관련 회사 (쉼표로 구분)", "")
+        source = st.text_input("출처 (쉼표로 구분)", "")
+
+        # 필터 키워드 생성
+        keywords = {
+            "tag_contents": [tag.strip() for tag in tag_contents.split(",") if tag.strip()],
+            "tag_people": [person.strip() for person in tag_people.split(",") if person.strip()],
+            "tag_company": [company.strip() for company in tag_company.split(",") if company.strip()],
+            "source": [src.strip() for src in source.split(",") if src.strip()]
+        }
+
         st.session_state.messages.append({"role": "user", "content": question})
         with st.chat_message("user"):
             st.markdown(question)
@@ -144,7 +147,7 @@ def main():
         with st.chat_message("assistant"):
             # 검색 및 답변 생성
             st.write("검색 중...")
-            response = create_response(question)
+            response = create_response(question, keywords)
             st.markdown(response)
 
             # 채팅 기록 저장
